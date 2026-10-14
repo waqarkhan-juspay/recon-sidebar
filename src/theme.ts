@@ -407,19 +407,21 @@ export const ghostButtonTokens = ghostButton('lg', {
 })
 
 /**
- * Alerts' row actions — Edit and History — as ghosts at SMALL: the secondary SMALL button's
- * padding (5px / 16px on sm) plus its 1px border, so dropping the outline leaves each one
- * exactly the 32px it was and the row does not shift. Same 10px radius as the outlined
- * button, so the hover fill has the shape the border used to draw.
+ * Alerts' row actions — Edit and History — as ghost icon buttons at SMALL: an even 8px around
+ * a 16px glyph makes each a 32px square, the height the secondary SMALL button has, so the
+ * rows keep their height. Same 10px radius as that button, so the hover fill is its shape.
+ *
+ * INLINE rather than ICON_ONLY, because secondary ICON_ONLY is the outlined button: INLINE is
+ * the subtype with no border and no fill, and with no `text` ButtonV2 draws just the slot.
  *
  * The fill is a step darker than the default ghost's. These sit in table rows, and hovering
  * a button hovers its row too — DataTable paints a hovered row gray[100]. The default
  * gray[50] is lighter than that, so the hovered button read as a pale hole in a grey row.
  * gray[150] / gray[200] sit one step above the row instead.
  */
-export const smallGhostButtonTokens = ghostButton('sm', {
-  x: '16px',
-  y: '6px',
+export const smallGhostIconButtonTokens = ghostButton('sm', {
+  x: '8px',
+  y: '8px',
   radius: FOUNDATION_THEME.border.radius[10],
   hover: FOUNDATION_THEME.colors.gray[150],
   active: FOUNDATION_THEME.colors.gray[200],

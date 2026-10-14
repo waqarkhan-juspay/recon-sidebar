@@ -25,15 +25,34 @@ import {
   TagV2Type,
   TextInputV2,
   ThemeProvider,
+  TooltipV2,
   type ColumnDefinition,
 } from '@juspay/blend-design-system'
 import { useDialKit } from 'dialkit'
-import { Bell, BellRing, CalendarDays, Clock, Mail, Phone, Plus, Search } from 'lucide-react'
-import { useCallback, useMemo, useState, type ReactElement } from 'react'
+import {
+  Bell,
+  BellRing,
+  CalendarDays,
+  Clock,
+  History as HistoryIcon,
+  Mail,
+  Pencil,
+  Phone,
+  Plus,
+  Search,
+} from 'lucide-react'
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactElement,
+} from 'react'
 import slackLogo from '../../assets/icons/slack.svg'
 import { SLOT_ICON } from '../../icons'
 import { PrimitiveText, font } from '../../primitives'
-import { smallGhostButtonTokens, viewTabsTokens } from '../../theme'
+import { smallGhostIconButtonTokens, viewTabsTokens } from '../../theme'
 import { TAGV2_TOKENS } from '../../tokens/TagV2'
 import {
   ALERT_SETUPS,
@@ -78,6 +97,9 @@ const STAT_ICON_COLOR = {
   lastDay: colors.orange[600],
   lastMonth: colors.purple[600],
 } as const
+
+/** The row actions' glyphs, centred in their 32px ghost squares (smallGhostIconButtonTokens). */
+const ACTION_ICON_SIZE = 16
 
 /** Slack's logo in a tag — the same 12px box as SLOT_ICON's glyphs beside it. */
 const TAG_LOGO_SIZE = SLOT_ICON.size
@@ -135,6 +157,19 @@ type StatCard = {
   value: string
   subtitle: string
   change?: ReturnType<typeof firedChange>
+  /**
+   * Set on a card that filters the table: clicking it turns its filter on, clicking again
+   * turns it off. `pressed` is whether that filter is on now.
+   */
+  filter?: { pressed: boolean; toggle: () => void; on: string; off: string }
+}
+
+/** Enter and Space press a card the way they press a button. */
+const pressOnKey = (toggle: () => void) => (event: KeyboardEvent<HTMLDivElement>) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    toggle()
+  }
 }
 
 /**
@@ -163,7 +198,9 @@ const COLUMNS = [
   { field: 'type', header: 'Alert Type' },
   { field: 'checks', header: 'What It Checks' },
   { field: 'channels', header: 'Notify Via' },
-  { field: 'status', header: 'Status' },
+  // The on/off switch lives in Actions rather than a Status column of its own, as on the
+  // Configurator: with no Active / Inactive word beside it, the switch is a control, not a
+  // status readout — and the Active Alerts card already answers "which are on?".
   { field: 'actions', header: 'Actions' },
 ] as const
 
@@ -212,6 +249,8 @@ function Alerts() {
 
   const [query, setQuery] = useState('')
   const [typeTab, setTypeTab] = useState(ALL)
+  /** On while the Active Alerts card is pressed: the table shows switched-on alerts only. */
+  const [activeOnly, setActiveOnly] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
 
@@ -236,6 +275,10 @@ function Alerts() {
     setTypeTab(next)
     setPage(1)
   }
+  const toggleActiveOnly = () => {
+    setActiveOnly((previous) => !previous)
+    setPage(1)
+  }
   const handlePageSizeChange = useCallback((next: number) => {
     setPageSize(next)
     setPage(1)
@@ -243,10 +286,17 @@ function Alerts() {
 
   const matchingRows = useMemo<TableRow[]>(() => {
     const needle = query.trim().toLowerCase()
+    // The Active card narrows within the tab and the search rather than replacing them, so
+    // "active File alerts matching PayU" is one click on top of what is already chosen. It
+    // reads the live switches: turning an alert off while it is on drops that row at once,
+    // which is the filter doing what it says.
     return ALERT_SETUPS.filter(
-      (row) => (typeTab === ALL || row.type === typeTab) && matchesQuery(row, needle),
+      (row) =>
+        (typeTab === ALL || row.type === typeTab) &&
+        (!activeOnly || active[row.id]) &&
+        matchesQuery(row, needle),
     ).map((row) => ({ ...row, isActive: active[row.id] ?? false }))
-  }, [query, typeTab, active])
+  }, [query, typeTab, activeOnly, active])
 
   /**
    * Paged here rather than by DataTable, for the Configurator's reason: with
@@ -262,12 +312,6 @@ function Alerts() {
   )
 
   /**
-   * Built once. DataTable keeps the first `renderCell` it is given for a REACT_ELEMENT
-   * column (see the note on `columns` in Configurator.tsx), so a cell reads the switch from
-   * `row.isActive` — which arrives with `data` and is always current — and writes through
-   * `setActive`, which React keeps stable.
-   */
-  /**
    * The four cards, in reading order. Active leads — what is watching right now is the
    * number this page is opened for — then the last day's firing, the total, and the month.
    */
@@ -278,6 +322,12 @@ function Alerts() {
       icon: <BellRing size={STAT_ICON_SIZE} color={STAT_ICON_COLOR.active} />,
       value: String(activeCount),
       subtitle: 'Currently live setups',
+      filter: {
+        pressed: activeOnly,
+        toggle: toggleActiveOnly,
+        on: 'Show only active alerts',
+        off: 'Show all alerts',
+      },
     },
     {
       title: 'Triggered in 24 Hours',
@@ -301,6 +351,24 @@ function Alerts() {
     },
   ]
 
+  /**
+   * Alert Type only earns its column under All. On the File or Recon tab every row says the
+   * same word, so the column is dropped there rather than repeating the tab's own label down
+   * the table.
+   */
+  const showTypeColumn = typeTab === ALL
+
+  /**
+   * Rebuilt only when the type column comes or goes. DataTable re-syncs its columns from this
+   * prop and honours `isVisible` both ways (DataTable.tsx:215-273): a column turned off is
+   * dropped, and one turned back on is put back at its index here — so Alert Type returns to
+   * second place, not the end.
+   *
+   * Cells still read their state from `row`, never from a closure: DataTable keeps the first
+   * `renderCell` it is given for a REACT_ELEMENT column (see the note on `columns` in
+   * Configurator.tsx), so the switch reads `row.isActive` — which arrives with `data` and is
+   * always current — and writes through `setActive`, which React keeps stable.
+   */
   const columns = useMemo<ColumnDefinition<Record<string, unknown>>[]>(
     () =>
       COLUMNS.map(({ field, header }) => {
@@ -346,7 +414,7 @@ function Alerts() {
         if (field === 'type') {
           // Plain text, in the cell's own style. A tag here would put a second set of
           // coloured chips beside Notify Via's, and only the channels need telling apart.
-          return { ...base, type: ColumnType.TEXT }
+          return { ...base, type: ColumnType.TEXT, isVisible: showTypeColumn }
         }
 
         if (field === 'channels') {
@@ -373,61 +441,79 @@ function Alerts() {
           }
         }
 
-        if (field === 'status') {
-          return {
-            ...base,
-            type: ColumnType.REACT_ELEMENT,
-            renderCell: (_value, row) => {
-              const id = String(row.id)
-              return (
-                // The switch alone, with no Active / Inactive word beside it: its position
-                // already says that. The alert's name is its accessible name, so a screen
-                // reader hears "Large amount mismatch, switch, on" rather than twenty
-                // switches that sound the same.
+        return {
+          ...base,
+          type: ColumnType.REACT_ELEMENT,
+          renderCell: (_value, row) => {
+            const id = String(row.id)
+            const name = String(row.name)
+            return (
+              // Centred under the Actions title (its header is centred in index.css).
+              //
+              // The switch leads because it decides the rest: Edit is only live while the
+              // alert is on, so the cause sits right beside its effect. A hairline then
+              // splits the toggle from the two icon buttons, so it does not read as a third
+              // icon and a click aimed at Edit cannot land on it. Its margins are 8 and 8,
+              // but both gaps measure 16: SwitchV2 keeps an 8px gap after the track for a
+              // label it is not given here, and the ghost buttons carry 8px of padding
+              // around the pencil — so the hairline sits midway between track and glyph.
+              <div className="flex items-center justify-center">
+                {/* No Active / Inactive word beside it: its position already says that. The
+                    alert's name is its accessible name, so a screen reader hears "Large
+                    amount mismatch, switch, on" rather than twenty switches that sound the
+                    same. */}
                 <SwitchV2
                   checked={row.isActive === true}
                   size={SelectorV2Size.MD}
-                  aria-label={String(row.name)}
+                  aria-label={name}
                   onCheckedChange={(next) =>
                     setActive((previous) => ({ ...previous, [id]: next }))
                   }
                 />
-              )
-            },
-          }
-        }
-
-        return {
-          ...base,
-          type: ColumnType.REACT_ELEMENT,
-          renderCell: (_value, row) => (
-            // Centred under the Actions title (its header is centred in index.css). Ghosts —
-            // secondary with no outline — so twenty rows of them read as two quiet actions
-            // per row rather than a column of boxes; the hover fill still marks each one as
-            // a button. smallGhostButtonTokens keeps them at the outlined button's 32px.
-            <div className="flex items-center justify-center gap-2">
-              <ThemeProvider componentTokens={smallGhostButtonTokens}>
-                {/* Edit is off while the alert is: the design greys it on every inactive
-                    row, so a setup is switched back on before its rule is changed. */}
-                <ButtonV2
-                  buttonType={ButtonV2Type.SECONDARY}
-                  subType={ButtonV2SubType.INLINE}
-                  size={ButtonV2Size.SMALL}
-                  text="Edit"
-                  disabled={row.isActive !== true}
+                {/* blend-gap: Blend 0.0.37 exports no Divider / Separator, so the hairline is
+                    a 1px span on the border token's colour. Decorative — aria-hidden. */}
+                <span
+                  aria-hidden
+                  className="mx-2 h-4 w-px shrink-0"
+                  style={{ background: colors.gray[200] }}
                 />
-                <ButtonV2
-                  buttonType={ButtonV2Type.SECONDARY}
-                  subType={ButtonV2SubType.INLINE}
-                  size={ButtonV2Size.SMALL}
-                  text="History"
-                />
-              </ThemeProvider>
-            </div>
-          ),
+                {/* Two ghost icon buttons rather than two words: the column only ever holds
+                    these two actions, so the glyphs are learnt once, and each one names
+                    itself in a tooltip on hover and to a screen reader through its
+                    aria-label. */}
+                <div className="flex items-center gap-1">
+                  <ThemeProvider componentTokens={smallGhostIconButtonTokens}>
+                    {/* Edit is off while the alert is: the design greys it on every
+                        inactive row, so a setup is switched back on before its rule is
+                        changed. ButtonV2 tints its slot by state, so the pencil greys with
+                        it. */}
+                    <TooltipV2 content="Edit">
+                      <ButtonV2
+                        buttonType={ButtonV2Type.SECONDARY}
+                        subType={ButtonV2SubType.INLINE}
+                        size={ButtonV2Size.SMALL}
+                        leftSlot={{ slot: <Pencil size={ACTION_ICON_SIZE} /> }}
+                        aria-label={`Edit ${name}`}
+                        disabled={row.isActive !== true}
+                      />
+                    </TooltipV2>
+                    <TooltipV2 content="History">
+                      <ButtonV2
+                        buttonType={ButtonV2Type.SECONDARY}
+                        subType={ButtonV2SubType.INLINE}
+                        size={ButtonV2Size.SMALL}
+                        leftSlot={{ slot: <HistoryIcon size={ACTION_ICON_SIZE} /> }}
+                        aria-label={`History of ${name}`}
+                      />
+                    </TooltipV2>
+                  </ThemeProvider>
+                </div>
+              </div>
+            )
+          },
         }
       }),
-    [],
+    [showTypeColumn],
   )
 
   return (
@@ -463,19 +549,59 @@ function Alerts() {
         className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
         style={{ marginTop: spacing.introToCards }}
       >
-        {statCards.map((card) => (
-          <StatCardV2
-            key={card.title}
-            variant={StatCardV2Variant.NUMBER}
-            title={card.title}
-            titleIcon={card.icon}
-            value={card.value}
-            change={card.change}
-            subtitle={card.subtitle}
-            maxWidth="none"
-            aria-label={statCardLabel(card)}
-          />
-        ))}
+        {statCards.map((card) => {
+          const { filter } = card
+          const statCard = (
+            <StatCardV2
+              key={card.title}
+              variant={StatCardV2Variant.NUMBER}
+              title={card.title}
+              titleIcon={card.icon}
+              value={card.value}
+              change={card.change}
+              subtitle={card.subtitle}
+              maxWidth="none"
+              aria-label={statCardLabel(card)}
+              // A filtering card is a toggle button. StatCardV2 spreads its remaining props
+              // after its own `role="region"`, so these replace it — still plain props. Not
+              // `title`, though: StatCardV2 takes that as the card's heading, so the hover hint
+              // goes on the wrapper below.
+              {...(filter && {
+                role: 'button',
+                tabIndex: 0,
+                'aria-pressed': filter.pressed,
+                onClick: filter.toggle,
+                onKeyDown: pressOnKey(filter.toggle),
+              })}
+            />
+          )
+          if (!filter) return statCard
+
+          /*
+           * The pressed state, drawn on a wrapper we own: StatCardV2 has no selected state and
+           * takes no className or style. A 2px primary ring over the card's own 1px border
+           * (offset -1px, on the card's 12px radius) while the filter is on; a gray[300]
+           * hairline on hover while it is off, so the card reads as clickable. `grid` lets
+           * the card stretch to its row's height like the unwrapped cards beside it.
+           */
+          return (
+            <div
+              key={card.title}
+              title={filter.pressed ? filter.off : filter.on}
+              className="grid cursor-pointer hover:outline-1 hover:outline-[color:var(--stat-card-hover)]"
+              style={
+                {
+                  '--stat-card-hover': colors.gray[300],
+                  borderRadius: FOUNDATION_THEME.border.radius[12],
+                  outlineOffset: '-1px',
+                  ...(filter.pressed && { outline: `2px solid ${colors.primary[500]}` }),
+                } as CSSProperties
+              }
+            >
+              {statCard}
+            </div>
+          )
+        })}
       </div>
 
       <div
