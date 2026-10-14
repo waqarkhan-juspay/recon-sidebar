@@ -233,6 +233,17 @@ html {
 }
 
 /*
+ * The Alerts table's Actions title, centred over the centred Edit / History pair.
+ *
+ * blend-gap: ColumnDefinition has no alignment — DataTable centres only its own built-in
+ * actions column — and the <th> carries `text-align: left` inline. The <p> holding the title
+ * is full-width and only inherits that, so setting it on the <p> is enough: no !important.
+ */
+.alerts-table th[data-element='table-header'][data-id='Actions'] p {
+  text-align: center;
+}
+
+/*
  * …and the same for their size. DataTable writes `font-size: 12px` inline on the <th> and
  * again on the <p> inside it, with no prop reaching either, so both are named here and both
  * need !important. The values arrive as --header-size / --header-leading from FieldsStep,

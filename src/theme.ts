@@ -344,7 +344,13 @@ export const dangerSecondaryButtonTokens: ComponentTokenType = {
  */
 const ghostButton = (
   size: GhostSize,
-  { x, y, radius }: { x: string; y: string; radius: unknown },
+  {
+    x,
+    y,
+    radius,
+    hover = FOUNDATION_THEME.colors.gray[50],
+    active = FOUNDATION_THEME.colors.gray[100],
+  }: { x: string; y: string; radius: unknown; hover?: unknown; active?: unknown },
 ): ComponentTokenType => ({
   ...componentTokens,
   BUTTONV2: perBreakpoint(
@@ -365,8 +371,8 @@ const ghostButton = (
             ...token.backgroundColor.secondary,
             inline: {
               default: 'transparent',
-              hover: FOUNDATION_THEME.colors.gray[50],
-              active: FOUNDATION_THEME.colors.gray[100],
+              hover,
+              active,
               disabled: 'transparent',
             },
           },
@@ -398,6 +404,25 @@ export const ghostButtonTokens = ghostButton('lg', {
   x: '16px',
   y: '10px',
   radius: FOUNDATION_THEME.border.radius[10],
+})
+
+/**
+ * Alerts' row actions — Edit and History — as ghosts at SMALL: the secondary SMALL button's
+ * padding (5px / 16px on sm) plus its 1px border, so dropping the outline leaves each one
+ * exactly the 32px it was and the row does not shift. Same 10px radius as the outlined
+ * button, so the hover fill has the shape the border used to draw.
+ *
+ * The fill is a step darker than the default ghost's. These sit in table rows, and hovering
+ * a button hovers its row too — DataTable paints a hovered row gray[100]. The default
+ * gray[50] is lighter than that, so the hovered button read as a pale hole in a grey row.
+ * gray[150] / gray[200] sit one step above the row instead.
+ */
+export const smallGhostButtonTokens = ghostButton('sm', {
+  x: '16px',
+  y: '6px',
+  radius: FOUNDATION_THEME.border.radius[10],
+  hover: FOUNDATION_THEME.colors.gray[150],
+  active: FOUNDATION_THEME.colors.gray[200],
 })
 
 /**
