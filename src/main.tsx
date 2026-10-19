@@ -15,6 +15,7 @@ import { createRoot } from 'react-dom/client'
 import { RouterProvider } from 'react-router'
 import './index.css'
 import { SHOW_DIALKIT, SHOW_MESURER } from './dev-tools'
+import AuthGate from './auth/AuthGate'
 import { router } from './router.tsx'
 import { componentTokens } from './theme'
 
@@ -90,7 +91,10 @@ document.documentElement.style.setProperty('--app-surface', FOUNDATION_THEME.col
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider componentTokens={componentTokens}>
-      <RouterProvider router={router} />
+      {/* Sign in, or continue as a guest, before any of the app renders. */}
+      <AuthGate>
+        <RouterProvider router={router} />
+      </AuthGate>
       {/* Collapsed on load. DialRoot's own default is `defaultOpen = true`, which puts an
           open panel over the top-right of every page before anyone has asked for one —
           the toolbar's launcher button is enough of an affordance. */}

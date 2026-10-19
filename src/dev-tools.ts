@@ -1,8 +1,9 @@
 /**
  * The in-app development tools, and whether this build shows them.
  *
- * Both were off on 2026-09-22 for a demo and back on the same day. Flip either to `false`
- * to clear it out again; nothing is uninstalled and no code is deleted.
+ * Both are off on the `sidebar` branch (2026-10-19) — it is a demo for the reconciliation
+ * team. They were also off on 2026-09-22 for a demo and back on the same day. Flip either
+ * back to `true` to bring it back; nothing is uninstalled and no code is deleted.
  *
  * They live here rather than in `src/main.tsx` because `SHOW_DIALKIT` is read in three
  * places: main.tsx mounts (or does not mount) `DialRoot`, and the two dial panels under
@@ -13,7 +14,7 @@
  */
 
 /** DialKit — the version/spacing panels, launched from the button at top right. */
-export const SHOW_DIALKIT = true
+export const SHOW_DIALKIT = false
 
 /**
  * Mesurer — the measure-and-annotate inspector, toggled with `M`.
@@ -23,4 +24,4 @@ export const SHOW_DIALKIT = true
  * 365 KB chunk however dead the JSX is. Same reason `import.meta.env.DEV` is spelled out
  * there rather than here.
  */
-export const SHOW_MESURER = true
+export const SHOW_MESURER = false

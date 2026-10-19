@@ -9,7 +9,6 @@ import {
 import {
   BellDot,
   BellRing,
-  BookOpen,
   ChartLine,
   ClipboardList,
   FileClock,
@@ -20,7 +19,6 @@ import {
   House,
   Landmark,
   ListChecks,
-  MessageSquareCheck,
   Percent,
   Play,
   Scale,
@@ -28,14 +26,10 @@ import {
   Ticket,
   TriangleAlert,
   Upload,
-  User,
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
-import announcementIcon from '../assets/icons/announcement-01.svg'
-import globeIcon from '../assets/icons/globe-01.svg'
-import MaskIcon from '../components/MaskIcon'
 import { ICON_SIZE } from './chrome'
 
 /**
@@ -73,7 +67,10 @@ export type NavSectionDefault = {
 }
 
 const slug = (label: string) =>
-  label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
 
 const lucide = (Icon: LucideIcon) => <Icon size={ICON_SIZE} />
 
@@ -90,14 +87,7 @@ const recon = (
   extra: Partial<Omit<NavModule, 'label' | 'icon'>> = {},
 ) => navModule(label, lucide(Icon), { href: `/${slug(label)}`, ...extra })
 
-const TOP_MODULES: NavModule[] = [
-  navModule('Home', lucide(House), { href: HOME_PATH }),
-  navModule('Marketplace', <MaskIcon src={globeIcon} size={ICON_SIZE} />),
-  navModule('What’s New', <MaskIcon src={announcementIcon} size={ICON_SIZE} />, { id: 'whats-new' }),
-  navModule('Users', lucide(User)),
-  navModule('Orders', lucide(BookOpen)),
-  navModule('Action Center', lucide(MessageSquareCheck), { badge: 'Beta' }),
-]
+const TOP_MODULES: NavModule[] = [navModule('Home', lucide(House), { href: HOME_PATH })]
 
 const RECON_MODULES: NavModule[] = [
   recon('Analytics', ChartLine),
@@ -157,20 +147,12 @@ export const DEFAULT_SECTIONS: NavSectionDefault[] = [
     defaultOpen: true,
     itemIds: RECON_MODULES.map((m) => m.id),
   },
-  // Sections the design draws with nothing under them yet.
-  ...['Offers', 'Mandates', 'Smart Convert', 'Monitoring'].map((label) => ({
-    id: slug(label),
-    label,
-    defaultOpen: false,
-    itemIds: [],
-  })),
 ]
 
 export const SECTION_BY_ID = Object.fromEntries(DEFAULT_SECTIONS.map((s) => [s.id, s]))
 
 /** How a section is named where it is not drawn as a heading — the deleted-modules bar. */
-export const sectionName = (sectionId: string) =>
-  SECTION_BY_ID[sectionId]?.label ?? 'Main menu'
+export const sectionName = (sectionId: string) => SECTION_BY_ID[sectionId]?.label ?? 'Main menu'
 
 /** "3. Analytics" in a numbered section, the plain name everywhere else. */
 export const displayLabel = (name: string, sectionId: string, index: number) =>

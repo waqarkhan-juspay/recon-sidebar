@@ -26,3 +26,6 @@ dist-ssr
 # Per-session Claude Code dev-server config (machine-local)
 .claude/launch.json
 .mcp.json
+
+# The sidebar demo's editor emails — this repo is public
+supabase/allowlist.sql

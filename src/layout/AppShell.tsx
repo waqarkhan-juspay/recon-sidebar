@@ -4,9 +4,11 @@ import {
   AvatarV2Size,
   FOUNDATION_THEME,
   SidebarV2,
+  SidebarV2StateChange,
+  type SidebarV2StateChangeType,
 } from '@juspay/blend-design-system'
-import { ChevronDown } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { LogIn, LogOut } from 'lucide-react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import avatarImage from '../assets/avatar.png'
 import searchIcon from '../assets/icons/search-md.svg'
@@ -18,7 +20,8 @@ import merchantOrb from '../assets/merchant-hyper-recon.png'
 import MaskIcon from '../components/MaskIcon'
 import { font } from '../primitives'
 import { CHROME_HOVER } from './chrome'
-import DeletedModulesBar from './DeletedModulesBar'
+import { displayName, signOut, useSession } from '../auth/session'
+import ActivityBar from './ActivityBar'
 import EditableNav from './EditableNav'
 import { nameOf, useNavState } from './nav-store'
 import { ROUTED_MODULES, buildNavigationData } from './navigation'
@@ -29,12 +32,16 @@ const { colors } = FOUNDATION_THEME
 const NAV_PATHS = new Set(ROUTED_MODULES.map((m) => m.href))
 
 /**
- * The sidebar is always open on this branch and cannot be closed: SidebarV2 is held
- * expanded (a controlled `isExpanded` whose change handler does nothing), its collapse button
- * is hidden in index.css, and the collapse shortcut is a key nobody can type.
+ * The sidebar opens expanded on every load — SidebarV2 keeps its state in memory only, so a
+ * refresh always starts here. Anyone can still collapse it with its own button or the key.
  */
-const keepOpen = () => {}
-const NO_COLLAPSE_KEY = 'F24'
+const RAIL_STARTS_EXPANDED = true
+
+/**
+ * `/`, Blend's own default, as the product has it. SidebarV2 listens for it anywhere outside
+ * a form field, so typing into an input (renaming a module or tab) is safe.
+ */
+const SIDEBAR_COLLAPSE_KEY = '/'
 
 /**
  * The sidebar rows this file draws — the footer's menu items and the profile.
@@ -61,8 +68,8 @@ const tenants = [
   { label: 'Hyperswitch', value: 'hyperswitch', icon: tenantIcon2 },
 ]
 
-/** The signed-in user, as the design names them — the row shows a name, not an address. */
-const PROFILE_NAME = 'Waqar Khan'
+/** The one editor with a photo in the design; everyone else gets initials. */
+const OWNER_EMAIL = 'waqar.khan@juspay.in'
 
 /**
  * The merchant the rail is scoped to — node 4405:10766. The orb is the design's own export,
@@ -118,37 +125,66 @@ function TopbarActions() {
 }
 
 /**
- * The signed-in user, and the whole of the sidebar footer: a round avatar, the name, and a
- * chevron at the far end.
+ * Who is here, and the way out: the signed-in editor with Sign out, or "Guest" with Sign in.
  *
  * Blend's footer draws the rule above it (`footer.borderTop`), so the row needs no divider
- * of its own.
+ * of its own. SidebarV2 passes `footer` straight through without saying the rail has
+ * collapsed, so this drops everything but the avatar itself at 52px.
  */
-function SidebarFooter() {
+function SidebarFooter({ collapsed }: { collapsed: boolean }) {
+  const session = useSession()
+  const isEditor = session.status === 'editor'
+  const email = isEditor ? session.email : ''
+  const name = isEditor ? displayName(email) : 'Guest'
+  const detail = isEditor ? email : 'View only'
+
   return (
-    <button
-      type="button"
-      style={{
-        ...CHROME_HOVER,
-        borderRadius: FOUNDATION_THEME.border.radius[8],
-      }}
-      // py-3.5 (14px) around the 24px avatar makes the row 52px.
-      className="flex w-full cursor-pointer items-center gap-2 border-none bg-transparent px-2 py-3.5 hover:bg-[var(--chrome-hover)]"
+    // py-3.5 (14px) around the 24px avatar makes the row 52px — the collapsed rail's width.
+    <div
+      title={collapsed ? `${name} · ${detail}` : undefined}
+      className={`flex w-full items-center py-3.5 ${collapsed ? 'justify-center px-0' : 'gap-2 px-2'}`}
     >
       <AvatarV2
-        src={avatarImage}
-        alt={PROFILE_NAME}
+        src={email === OWNER_EMAIL ? avatarImage : undefined}
+        alt={name}
+        fallbackText={isEditor ? undefined : 'G'}
         size={AvatarV2Size.SM}
         shape={AvatarV2Shape.CIRCULAR}
       />
-      <span
-        className="flex-1 overflow-hidden text-left text-ellipsis whitespace-nowrap"
-        style={{ ...MENU_ROW, color: colors.gray[700] }}
-      >
-        {PROFILE_NAME}
-      </span>
-      <ChevronDown size={16} color={colors.gray[400]} aria-hidden />
-    </button>
+      {!collapsed && (
+        <>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span
+              className="overflow-hidden text-ellipsis whitespace-nowrap"
+              style={{ ...MENU_ROW, color: colors.gray[700] }}
+            >
+              {name}
+            </span>
+            <span
+              className="overflow-hidden text-ellipsis whitespace-nowrap"
+              style={{ fontSize: 12, lineHeight: '16px', fontWeight: 500, color: colors.gray[500] }}
+            >
+              {detail}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            className="flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border-none bg-transparent px-2 hover:bg-[var(--chrome-hover)]"
+            style={{
+              ...CHROME_HOVER,
+              fontSize: 13,
+              lineHeight: '18px',
+              fontWeight: 600,
+              color: colors.gray[600],
+            }}
+          >
+            {isEditor ? <LogOut size={14} /> : <LogIn size={14} />}
+            {isEditor ? 'Sign out' : 'Sign in'}
+          </button>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -157,6 +193,17 @@ function AppShell({ children }: { children?: ReactNode }) {
   const [merchant, setMerchant] = useState(merchants[0].value)
   const navigate = useNavigate()
   const { pathname } = useLocation()
+
+  /**
+   * Compared against COLLAPSED, not `!isExpanded`: INTERMEDIATE is the hover-peek, where the
+   * rail is wide again. Stable because SidebarV2 keys an effect on this callback.
+   */
+  const [isRailCollapsed, setIsRailCollapsed] = useState(!RAIL_STARTS_EXPANDED)
+  const handleSidebarState = useCallback(
+    (state: SidebarV2StateChangeType) =>
+      setIsRailCollapsed(state === SidebarV2StateChange.COLLAPSED),
+    [],
+  )
 
   const activePath = NAV_PATHS.has(pathname) ? pathname : null
   const nav = useNavState()
@@ -195,15 +242,15 @@ function AppShell({ children }: { children?: ReactNode }) {
         }}
         topbar={<TopbarContent />}
         rightActions={<TopbarActions />}
-        isExpanded
-        onExpandedChange={keepOpen}
-        sidebarCollapseKey={NO_COLLAPSE_KEY}
-        footer={<SidebarFooter />}
+        defaultIsExpanded={RAIL_STARTS_EXPANDED}
+        sidebarCollapseKey={SIDEBAR_COLLAPSE_KEY}
+        onSidebarStateChange={handleSidebarState}
+        footer={<SidebarFooter collapsed={isRailCollapsed} />}
       >
         {children}
       </SidebarV2>
-      <EditableNav activePath={activePath} navigate={navigate} />
-      <DeletedModulesBar />
+      <EditableNav activePath={activePath} navigate={navigate} collapsed={isRailCollapsed} />
+      <ActivityBar railCollapsed={isRailCollapsed} />
     </>
   )
 }

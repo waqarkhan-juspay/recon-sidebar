@@ -1000,24 +1000,21 @@ button[aria-label='Close modal'] {
   display: none !important;
 }
 
-button[aria-label*='sidebar. Press'] {
-  display: none !important;
-}
 
 /* The deleted-modules bar rising into place when it first appears. */
-@keyframes deleted-bar-enter {
+@keyframes activity-bar-enter {
   from {
     opacity: 0;
     transform: translateY(12px) scale(0.98);
   }
 }
 
-.deleted-bar {
-  animation: deleted-bar-enter var(--feedback-ms, 200ms) cubic-bezier(0.215, 0.61, 0.355, 1);
+.activity-bar {
+  animation: activity-bar-enter var(--feedback-ms, 200ms) cubic-bezier(0.215, 0.61, 0.355, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .deleted-bar {
+  .activity-bar {
     animation: none;
   }
 }

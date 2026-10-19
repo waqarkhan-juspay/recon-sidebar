@@ -25,8 +25,10 @@ import {
   moveModule,
   nameOf,
   renameModule,
+  useCanEdit,
   useNavState,
   type Change,
+  type NavState,
 } from './nav-store'
 import { DEFAULT_SECTIONS, MODULES, SECTION_BY_ID } from './navigation'
 
@@ -64,9 +66,12 @@ function useDirectoryContainer() {
 function EditableNav({
   activePath,
   navigate,
+  collapsed,
 }: {
   activePath: string | null
   navigate: (to: string) => void
+  /** The rail is down to 52px: icons only, no editing. Hovering it peeks the full list back. */
+  collapsed: boolean
 }) {
   const nav = useNavState()
   const container = useDirectoryContainer()
@@ -78,6 +83,12 @@ function EditableNav({
   )
 
   if (!container) return null
+  if (collapsed) {
+    return createPortal(
+      <CollapsedNav nav={nav} activePath={activePath} navigate={navigate} />,
+      container,
+    )
+  }
 
   const endDrag = () => {
     setDragId(null)
@@ -136,7 +147,12 @@ function EditableNav({
                 }}
               >
                 <span
-                  style={{ fontSize: 12, lineHeight: '18px', fontWeight: 600, color: colors.gray[400] }}
+                  style={{
+                    fontSize: 12,
+                    lineHeight: '18px',
+                    fontWeight: 600,
+                    color: colors.gray[400],
+                  }}
                 >
                   {defaults.label.toUpperCase()}
                 </span>
@@ -144,7 +160,10 @@ function EditableNav({
                   size={16}
                   color={colors.gray[400]}
                   aria-hidden
-                  style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }}
+                  style={{
+                    transform: isOpen ? 'rotate(180deg)' : 'none',
+                    transition: 'transform 150ms',
+                  }}
                 />
               </button>
             )}
@@ -185,7 +204,8 @@ function EditableNav({
                       const rect = event.currentTarget.getBoundingClientRect()
                       const after = event.clientY > rect.top + rect.height / 2
                       const next = { sectionId: section.id, index: index + (after ? 1 : 0) }
-                      if (next.index !== drop?.index || next.sectionId !== drop?.sectionId) setDrop(next)
+                      if (next.index !== drop?.index || next.sectionId !== drop?.sectionId)
+                        setDrop(next)
                     }}
                   />
                 ))}
@@ -210,6 +230,73 @@ function EditableNav({
       })}
     </nav>,
     container,
+  )
+}
+
+/**
+ * The nav in the collapsed 52px rail: one icon per module, a hairline between sections, and
+ * the module's name (with its number) as the tooltip.
+ */
+function CollapsedNav({
+  nav,
+  activePath,
+  navigate,
+}: {
+  nav: NavState
+  activePath: string | null
+  navigate: (to: string) => void
+}) {
+  return (
+    <nav data-editable-nav aria-label="Modules" className="flex flex-col items-center gap-3 py-3">
+      {nav.sections
+        .filter((section) => section.itemIds.length > 0)
+        .map((section, sectionIndex) => {
+          const numbered = !!SECTION_BY_ID[section.id]?.numbered
+          return (
+            <ul
+              key={section.id}
+              className="m-0 flex list-none flex-col items-center gap-1 p-0"
+              style={
+                sectionIndex > 0
+                  ? { borderTop: `1px solid ${colors.gray[150]}`, paddingTop: 12 }
+                  : undefined
+              }
+            >
+              {section.itemIds.map((id, index) => {
+                const mod = MODULES[id]
+                const name = `${numbered ? `${index + 1}. ` : ''}${nameOf(nav, id)}`
+                const isSelected = !!mod.href && mod.href === activePath
+                return (
+                  <li key={id} data-nav-module={id} data-section={section.id}>
+                    <a
+                      href={mod.href}
+                      title={name}
+                      aria-label={name}
+                      aria-current={isSelected ? 'page' : undefined}
+                      onClick={(event: MouseEvent) => {
+                        if (!mod.href) return event.preventDefault()
+                        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                        event.preventDefault()
+                        navigate(mod.href)
+                      }}
+                      className="flex size-8 items-center justify-center rounded hover:bg-[var(--row-hover)]"
+                      style={
+                        {
+                          '--row-hover': colors.gray[50],
+                          backgroundColor: isSelected ? colors.gray[150] : undefined,
+                          color: isSelected ? colors.gray[1000] : colors.gray[600],
+                        } as CSSProperties
+                      }
+                    >
+                      {mod.icon}
+                    </a>
+                  </li>
+                )
+              })}
+            </ul>
+          )
+        })}
+    </nav>
   )
 }
 
@@ -248,6 +335,8 @@ function NavRow({
   onDragOver: (event: DragEvent<HTMLLIElement>) => void
 }) {
   const mod = MODULES[id]
+  // Guests see the sidebar exactly as editors do, minus every way of changing it.
+  const canEdit = useCanEdit()
   const color = isSelected ? colors.gray[1000] : colors.gray[600]
   const prefix = numbered ? `${index + 1}. ` : ''
 
@@ -257,12 +346,7 @@ function NavRow({
         {mod.icon}
       </span>
       {isEditing ? (
-        <RenameField
-          id={id}
-          name={name}
-          prefix={prefix}
-          onDone={() => onEdit(null)}
-        />
+        <RenameField id={id} name={name} prefix={prefix} onDone={() => onEdit(null)} />
       ) : (
         <span className="min-w-0 break-words" style={{ ...ROW_TEXT, color }}>
           {prefix && <Num>{prefix}</Num>}
@@ -307,10 +391,10 @@ function NavRow({
         />
       )}
       <div
-        draggable={!isEditing}
+        draggable={canEdit && !isEditing}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
-        onDoubleClick={() => onEdit(id)}
+        onDoubleClick={canEdit ? () => onEdit(id) : undefined}
         className="group relative flex min-h-[33px] items-center rounded hover:bg-[var(--row-hover)]"
         style={
           {
@@ -321,7 +405,7 @@ function NavRow({
           } as CSSProperties
         }
       >
-        {!isEditing && (
+        {canEdit && !isEditing && (
           <GripVertical
             aria-hidden
             size={12}
@@ -348,10 +432,8 @@ function NavRow({
           <div className={linkClass}>{content}</div>
         )}
 
-        {!isEditing && (
-          <div
-            className="absolute top-[4px] right-1 hidden items-center gap-0.5 group-hover:flex group-has-[:focus-visible]:flex"
-          >
+        {canEdit && !isEditing && (
+          <div className="absolute top-[4px] right-1 hidden items-center gap-0.5 group-hover:flex group-has-[:focus-visible]:flex">
             <RowAction label={`Rename ${name}`} onClick={() => onEdit(id)}>
               <Pencil size={14} />
             </RowAction>
@@ -467,7 +549,12 @@ function RenameField({
         <span
           role="alert"
           className="absolute top-full left-0 z-20 mt-2 max-w-[180px] rounded px-2 py-1"
-          style={{ fontSize: 12, lineHeight: '16px', color: colors.gray[0], backgroundColor: colors.gray[900] }}
+          style={{
+            fontSize: 12,
+            lineHeight: '16px',
+            color: colors.gray[0],
+            backgroundColor: colors.gray[900],
+          }}
         >
           {error}
         </span>

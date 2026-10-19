@@ -11,6 +11,7 @@ import {
   renameTab,
   tabKey,
   tabsOf,
+  useCanEdit,
   useNavState,
   type Change,
 } from '../layout/nav-store'
@@ -32,6 +33,7 @@ const TAB_TEXT: CSSProperties = { fontSize: 14, lineHeight: '21px', fontWeight: 
  */
 function ModulePage({ moduleId }: { moduleId: string }) {
   const nav = useNavState()
+  const canEdit = useCanEdit()
   const tabs = tabsOf(nav, moduleId)
   const [picked, setPicked] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
@@ -51,7 +53,7 @@ function ModulePage({ moduleId }: { moduleId: string }) {
     <div className="mx-auto flex w-full max-w-[1440px] flex-col px-6 pt-6">
       <h1 className="sr-only">{nameOf(nav, moduleId)}</h1>
       <div
-        className="flex flex-wrap items-end gap-x-6"
+        className="flex flex-wrap items-end gap-x-6 gap-y-3"
         style={{ borderBottom: `1px solid ${colors.gray[200]}` }}
       >
         {tabs.length > 0 && (
@@ -102,7 +104,7 @@ function ModulePage({ moduleId }: { moduleId: string }) {
           </div>
         )}
         <div className="flex h-[35px] items-start">
-          <AddTab moduleId={moduleId} onAdded={setPicked} />
+          {canEdit && <AddTab moduleId={moduleId} onAdded={setPicked} />}
         </div>
       </div>
     </div>
@@ -144,9 +146,10 @@ function Tab({
   onDrop: (event: DragEvent<HTMLDivElement>) => void
   onDragEnd: () => void
 }) {
+  const canEdit = useCanEdit()
   return (
     <div
-      draggable={!isEditing}
+      draggable={canEdit && !isEditing}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
@@ -181,7 +184,7 @@ function Tab({
           role="tab"
           aria-selected={isSelected}
           onClick={onSelect}
-          onDoubleClick={() => onEdit(true)}
+          onDoubleClick={canEdit ? () => onEdit(true) : undefined}
           className="cursor-pointer border-none bg-transparent p-0 whitespace-nowrap text-[color:var(--tab)] hover:text-[color:var(--tab-hover)]"
           style={
             {
@@ -212,11 +215,14 @@ function Tab({
 
       {/* Rename / Delete, under the hovered tab. Part of the tab's own box, so moving the
           pointer down onto it does not end the hover. */}
-      {!isEditing && !isDragActive && (
+      {canEdit && !isEditing && !isDragActive && (
         <div className="absolute top-full left-1/2 z-20 hidden -translate-x-1/2 pt-1.5 group-hover:block group-has-[:focus-visible]:block">
           <div
             className="flex items-center gap-0.5 rounded-lg border bg-white p-0.5"
-            style={{ borderColor: colors.gray[200], boxShadow: '0 4px 12px rgba(16, 24, 40, 0.07)' }}
+            style={{
+              borderColor: colors.gray[200],
+              boxShadow: '0 4px 12px rgba(16, 24, 40, 0.07)',
+            }}
           >
             <TabAction label={`Rename ${label}`} onClick={() => onEdit(true)}>
               <Pencil size={13} />

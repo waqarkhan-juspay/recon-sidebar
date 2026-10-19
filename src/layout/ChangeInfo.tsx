@@ -6,6 +6,7 @@ import {
 } from '@juspay/blend-design-system'
 import { Info } from 'lucide-react'
 import type { CSSProperties } from 'react'
+import { displayName } from '../auth/session'
 import type { Change } from './nav-store'
 import { when } from './when'
 
@@ -35,6 +36,7 @@ function ChangeInfo({
             “{change.from}” → “{change.to}”
           </span>
           <span className="block" style={{ color: colors.gray[400] }}>
+            {change.by ? `${displayName(change.by)} · ` : ''}
             {when(change.at)}
           </span>
         </span>

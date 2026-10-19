@@ -1,17 +1,26 @@
 import { useSyncExternalStore } from 'react'
-import { DEFAULT_SECTIONS, MODULES } from './navigation'
+import { DEFAULT_SECTIONS, MODULES, sectionName } from './navigation'
 
 /**
  * Everyone's edits to the sidebar on this branch: the order of modules, their names, the ones
- * deleted, and each page's tabs — added, renamed or deleted.
+ * deleted, and each page's tabs — added, renamed, reordered or deleted.
  *
- * Kept in localStorage, so there is no sign-in and no permission gate — anyone who opens the
- * link can edit. It is per browser: one person's edits are not seen by another. Other tabs in
- * the same browser stay in sync through the `storage` event.
+ * The state lives here, in memory, and every change applies here first. src/auth/sync.ts then
+ * saves it to Supabase along with a line for the version history, and feeds other people's
+ * changes back in through `receive`. Only editors can change anything — guests get the
+ * sidebar read-only, and the database refuses their writes regardless.
+ *
+ * Without Supabase configured (local development only), it falls back to localStorage and
+ * a local history, so the app still runs.
  */
 
 /** One rename, kept so the sidebar and tab row can show what an item used to be called. */
-export type Change = { from: string; to: string; at: number }
+export type Change = { from: string; to: string; at: number; by?: string }
+
+/** A line in the version history, describing a change in words. */
+export type Edit = { kind: string; summary: string }
+
+export type Role = 'editor' | 'guest'
 
 export type DeletedModule = {
   kind: 'module'
@@ -91,7 +100,9 @@ function normalise(raw: StoredState | null): NavState {
     ...raw,
     tabs,
     deleted: (raw.deleted ?? []).map((d) =>
-      d.kind ? d : ({ ...d, kind: 'module', key: `module:${d.id}:${d.deletedAt}` } as DeletedModule),
+      d.kind
+        ? d
+        : ({ ...d, kind: 'module', key: `module:${d.id}:${d.deletedAt}` } as DeletedModule),
     ),
   }
 
@@ -125,7 +136,8 @@ function normalise(raw: StoredState | null): NavState {
   }
 }
 
-function load(): NavState {
+/** What this browser saved before the sidebar was shared — seeds the shared copy once. */
+export function loadLocal(): NavState {
   try {
     const text = localStorage.getItem(STORAGE_KEY)
     return normalise(text ? JSON.parse(text) : null)
@@ -134,25 +146,50 @@ function load(): NavState {
   }
 }
 
-let state = load()
+let state = defaultState()
+let role: Role = 'guest'
+let actor: string | undefined
+/** Where a change goes once it has applied here. Null until sync connects. */
+let save: ((next: NavState, edit: Edit) => void) | null = null
 const listeners = new Set<() => void>()
+const emit = () => listeners.forEach((l) => l())
 
-function commit(next: NavState) {
+/** Called by sync once it knows who is here and where changes go. */
+export function connect(options: {
+  role: Role
+  actor?: string
+  initial: unknown
+  save: (next: NavState, edit: Edit) => void
+}) {
+  role = options.role
+  actor = options.actor
+  save = options.save
+  state = normalise(options.initial as StoredState | null)
+  emit()
+}
+
+/** Someone else's change, arriving from the server. */
+export function receive(raw: unknown) {
+  state = normalise(raw as StoredState | null)
+  emit()
+}
+
+export const getNavState = () => state
+export { normalise as normaliseNavState }
+
+function commit(next: NavState, edit: Edit) {
+  if (role !== 'editor') return
   state = next
+  emit()
+  save?.(next, edit)
+}
+
+export function saveLocal(next: NavState) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   } catch {
     // Private mode or storage full: the edit still applies for this session.
   }
-  listeners.forEach((l) => l())
-}
-
-if (typeof window !== 'undefined') {
-  window.addEventListener('storage', (event) => {
-    if (event.key !== STORAGE_KEY) return
-    state = load()
-    listeners.forEach((l) => l())
-  })
 }
 
 const subscribe = (listener: () => void) => {
@@ -161,6 +198,8 @@ const subscribe = (listener: () => void) => {
 }
 
 export const useNavState = () => useSyncExternalStore(subscribe, () => state)
+/** Guests see everything but can change nothing; the controls for changing hide for them. */
+export const useCanEdit = () => useSyncExternalStore(subscribe, () => role === 'editor')
 
 export const nameOf = (s: NavState, id: string) => s.names[id] ?? MODULES[id]?.label ?? id
 
@@ -168,7 +207,8 @@ export const moduleKey = (id: string) => `module:${id}`
 export const tabKey = (moduleId: string, label: string) => `tab:${moduleId}:${label}`
 
 /** Renames of one item, newest first. */
-export const historyOf = (s: NavState, key: string): Change[] => [...(s.history[key] ?? [])].reverse()
+export const historyOf = (s: NavState, key: string): Change[] =>
+  [...(s.history[key] ?? [])].reverse()
 
 const logged = (s: NavState, key: string, change: Change) => ({
   ...s.history,
@@ -199,8 +239,8 @@ export function renameModule(id: string, raw: string): string | null {
   const names = { ...state.names }
   if (name === MODULES[id]?.label) delete names[id]
   else names[id] = name
-  const history = logged(state, moduleKey(id), { from: was, to: name, at: Date.now() })
-  commit({ ...state, names, history })
+  const history = logged(state, moduleKey(id), { from: was, to: name, at: Date.now(), by: actor })
+  commit({ ...state, names, history }, { kind: 'rename', summary: `Renamed “${was}” to “${name}”` })
   return null
 }
 
@@ -218,8 +258,16 @@ export function moveModule(id: string, toSectionId: string, toIndex: number) {
     itemIds: s.itemIds.filter((other) => other !== id),
   }))
   const target = sections.find((s) => s.id === toSectionId)!
-  target.itemIds.splice(Math.max(0, Math.min(index, target.itemIds.length)), 0, id)
-  commit({ ...state, sections })
+  const at = Math.max(0, Math.min(index, target.itemIds.length))
+  target.itemIds.splice(at, 0, id)
+  const where =
+    from.id === toSectionId
+      ? `position ${at + 1}`
+      : `${sectionName(toSectionId)}, position ${at + 1}`
+  commit(
+    { ...state, sections },
+    { kind: 'move', summary: `Moved “${nameOf(state, id)}” to ${where}` },
+  )
 }
 
 export function deleteModule(id: string) {
@@ -236,13 +284,16 @@ export function deleteModule(id: string) {
     sectionSize: from.itemIds.length,
     deletedAt,
   }
-  commit({
-    ...state,
-    sections: state.sections.map((s) =>
-      s.id === from.id ? { ...s, itemIds: s.itemIds.filter((other) => other !== id) } : s,
-    ),
-    deleted: [entry, ...state.deleted],
-  })
+  commit(
+    {
+      ...state,
+      sections: state.sections.map((s) =>
+        s.id === from.id ? { ...s, itemIds: s.itemIds.filter((other) => other !== id) } : s,
+      ),
+      deleted: [entry, ...state.deleted],
+    },
+    { kind: 'delete', summary: `Deleted “${entry.name}” from ${sectionName(from.id)}` },
+  )
 }
 
 /** Put a deleted module or tab back where it was — or as near as that place now allows. */
@@ -261,20 +312,26 @@ export function restore(key: string) {
     const history = entry.history?.length
       ? { ...state.history, [tabKey(entry.moduleId, label)]: entry.history }
       : state.history
-    commit({ ...state, deleted, history, tabs: { ...state.tabs, [entry.moduleId]: next } })
+    commit(
+      { ...state, deleted, history, tabs: { ...state.tabs, [entry.moduleId]: next } },
+      { kind: 'restore', summary: `Restored tab “${label}” on ${nameOf(state, entry.moduleId)}` },
+    )
     return
   }
 
-  commit({
-    ...state,
-    deleted,
-    sections: state.sections.map((s) => {
-      if (s.id !== entry.sectionId) return s
-      const itemIds = [...s.itemIds]
-      itemIds.splice(Math.min(entry.index, itemIds.length), 0, entry.id)
-      return { ...s, itemIds }
-    }),
-  })
+  commit(
+    {
+      ...state,
+      deleted,
+      sections: state.sections.map((s) => {
+        if (s.id !== entry.sectionId) return s
+        const itemIds = [...s.itemIds]
+        itemIds.splice(Math.min(entry.index, itemIds.length), 0, entry.id)
+        return { ...s, itemIds }
+      }),
+    },
+    { kind: 'restore', summary: `Restored “${entry.name}” to ${sectionName(entry.sectionId)}` },
+  )
 }
 
 /** A page's tab row as it stands — the registry's, unless someone has changed it. */
@@ -297,7 +354,10 @@ export function addTab(moduleId: string, raw: string): string | null {
   const label = cleanLabel(raw)
   const problem = tabProblem(moduleId, label)
   if (problem) return problem
-  commit({ ...state, tabs: { ...state.tabs, [moduleId]: [...tabsOf(state, moduleId), label] } })
+  commit(
+    { ...state, tabs: { ...state.tabs, [moduleId]: [...tabsOf(state, moduleId), label] } },
+    { kind: 'add-tab', summary: `Added tab “${label}” on ${nameOf(state, moduleId)}` },
+  )
   return null
 }
 
@@ -307,18 +367,25 @@ export function renameTab(moduleId: string, from: string, raw: string): string |
   if (label === from) return null
   const problem = tabProblem(moduleId, label, from)
   if (problem) return problem
-  commit({
-    ...state,
-    tabs: {
-      ...state.tabs,
-      [moduleId]: tabsOf(state, moduleId).map((tab) => (tab === from ? label : tab)),
+  commit(
+    {
+      ...state,
+      tabs: {
+        ...state.tabs,
+        [moduleId]: tabsOf(state, moduleId).map((tab) => (tab === from ? label : tab)),
+      },
+      history: rekey(state, tabKey(moduleId, from), tabKey(moduleId, label), {
+        from,
+        to: label,
+        at: Date.now(),
+        by: actor,
+      }),
     },
-    history: rekey(state, tabKey(moduleId, from), tabKey(moduleId, label), {
-      from,
-      to: label,
-      at: Date.now(),
-    }),
-  })
+    {
+      kind: 'rename-tab',
+      summary: `Renamed tab “${from}” to “${label}” on ${nameOf(state, moduleId)}`,
+    },
+  )
   return null
 }
 
@@ -330,8 +397,15 @@ export function moveTab(moduleId: string, label: string, toIndex: number) {
   const index = from < toIndex ? toIndex - 1 : toIndex
   if (index === from) return
   const next = row.filter((tab) => tab !== label)
-  next.splice(Math.max(0, Math.min(index, next.length)), 0, label)
-  commit({ ...state, tabs: { ...state.tabs, [moduleId]: next } })
+  const at = Math.max(0, Math.min(index, next.length))
+  next.splice(at, 0, label)
+  commit(
+    { ...state, tabs: { ...state.tabs, [moduleId]: next } },
+    {
+      kind: 'move-tab',
+      summary: `Moved tab “${label}” to position ${at + 1} on ${nameOf(state, moduleId)}`,
+    },
+  )
 }
 
 export function deleteTab(moduleId: string, label: string) {
@@ -350,10 +424,18 @@ export function deleteTab(moduleId: string, label: string) {
     history: state.history[tabKey(moduleId, label)],
   }
   const { [tabKey(moduleId, label)]: _carried, ...history } = state.history
-  commit({
-    ...state,
-    history,
-    deleted: [entry, ...state.deleted],
-    tabs: { ...state.tabs, [moduleId]: row.filter((tab) => tab !== label) },
-  })
+  commit(
+    {
+      ...state,
+      history,
+      deleted: [entry, ...state.deleted],
+      tabs: { ...state.tabs, [moduleId]: row.filter((tab) => tab !== label) },
+    },
+    { kind: 'delete-tab', summary: `Deleted tab “${label}” from ${nameOf(state, moduleId)}` },
+  )
+}
+
+/** Put the whole sidebar back as it was after an earlier change, as a change of its own. */
+export function restoreVersion(snapshot: unknown, summary: string) {
+  commit(normalise(snapshot as StoredState | null), { kind: 'restore-version', summary })
 }
