@@ -111,6 +111,9 @@ const TABLE = perBreakpoint(
   }),
 ) as unknown as ResponsiveTableTokens
 
+/** The nav panel's width, beside the 52px tenant rail. */
+export const SIDEBAR_WIDTH = '320px'
+
 /**
  * The sidebar white, not Blend's gray[25] (#FCFCFD).
  *
@@ -126,6 +129,9 @@ const SIDEBARV2 = perBreakpoint(
     return {
       ...token,
       container: { ...token.container, backgroundColor: white },
+      // Wide enough that no module name is ever cut short, with room kept for each row's
+      // Rename / Delete buttons (sidebar branch; Blend: 250px).
+      primarySidebar: { ...token.primarySidebar, width: SIDEBAR_WIDTH },
       leftPanel: { ...token.leftPanel, backgroundColor: white },
       header: { ...token.header, backgroundColor: white },
       // No padding of its own: the profile row (AppShell's SidebarFooter) carries its own, and

@@ -4,11 +4,9 @@ import {
   AvatarV2Size,
   FOUNDATION_THEME,
   SidebarV2,
-  SidebarV2StateChange,
-  type SidebarV2StateChangeType,
 } from '@juspay/blend-design-system'
 import { ChevronDown } from 'lucide-react'
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import avatarImage from '../assets/avatar.png'
 import searchIcon from '../assets/icons/search-md.svg'
@@ -20,29 +18,23 @@ import merchantOrb from '../assets/merchant-hyper-recon.png'
 import MaskIcon from '../components/MaskIcon'
 import { font } from '../primitives'
 import { CHROME_HOVER } from './chrome'
-import { ALERTS_PATH, CONFIGURATOR_PATH, HOME_PATH, buildNavigationData } from './navigation'
+import DeletedModulesBar from './DeletedModulesBar'
+import EditableNav from './EditableNav'
+import { nameOf, useNavState } from './nav-store'
+import { ROUTED_MODULES, buildNavigationData } from './navigation'
 import { TopbarStatusIcons } from './topbar'
 
 const { colors } = FOUNDATION_THEME
 
-/**
- * The rail starts collapsed — the app opens on the Configurator (src/router.tsx) and the
- * page, not the nav, is what you came for.
- *
- * Seeded into `isRailCollapsed` as well as handed to SidebarV2, because the footer rows
- * below are ours to draw and SidebarV2 only reports its state from an effect
- * (SidebarV2.tsx:171-173) — i.e. after the first paint. Initialising from `false` would
- * paint one frame of full-width footer rows inside a 52px rail before the effect corrected
- * it.
- */
-const RAIL_STARTS_EXPANDED = false
+const NAV_PATHS = new Set(ROUTED_MODULES.map((m) => m.href))
 
 /**
- * `/`, Blend's own default, chosen on purpose despite AGENTS.md rule 8.6: SidebarV2 listens
- * for it anywhere outside a form field, so a stray slash toggles the rail. Typing into an
- * input is safe.
+ * The sidebar is always open on this branch and cannot be closed: SidebarV2 is held
+ * expanded (a controlled `isExpanded` whose change handler does nothing), its collapse button
+ * is hidden in index.css, and the collapse shortcut is a key nobody can type.
  */
-const SIDEBAR_COLLAPSE_KEY = '/'
+const keepOpen = () => {}
+const NO_COLLAPSE_KEY = 'F24'
 
 /**
  * The sidebar rows this file draws — the footer's menu items and the profile.
@@ -130,23 +122,18 @@ function TopbarActions() {
  * chevron at the far end.
  *
  * Blend's footer draws the rule above it (`footer.borderTop`), so the row needs no divider
- * of its own. SidebarV2 passes `footer` straight through without saying the rail has
- * collapsed, so this drops the name and chevron itself at 52px — left alone they would be
- * clipped to a sliver by the panel's `overflow: hidden` — and takes its accessible name from
- * aria-label instead.
+ * of its own.
  */
-function SidebarFooter({ collapsed }: { collapsed: boolean }) {
+function SidebarFooter() {
   return (
     <button
       type="button"
-      aria-label={collapsed ? PROFILE_NAME : undefined}
-      title={collapsed ? PROFILE_NAME : undefined}
-      style={{ ...CHROME_HOVER, borderRadius: FOUNDATION_THEME.border.radius[8] }}
-      // py-3.5 (14px) around the 24px avatar makes the row 52px — the rail's own width, so the
-      // footer is as tall as the collapsed rail is wide.
-      className={`flex w-full cursor-pointer items-center border-none bg-transparent py-3.5 hover:bg-[var(--chrome-hover)] ${
-        collapsed ? 'justify-center px-0' : 'gap-2 px-2'
-      }`}
+      style={{
+        ...CHROME_HOVER,
+        borderRadius: FOUNDATION_THEME.border.radius[8],
+      }}
+      // py-3.5 (14px) around the 24px avatar makes the row 52px.
+      className="flex w-full cursor-pointer items-center gap-2 border-none bg-transparent px-2 py-3.5 hover:bg-[var(--chrome-hover)]"
     >
       <AvatarV2
         src={avatarImage}
@@ -154,17 +141,13 @@ function SidebarFooter({ collapsed }: { collapsed: boolean }) {
         size={AvatarV2Size.SM}
         shape={AvatarV2Shape.CIRCULAR}
       />
-      {!collapsed && (
-        <>
-          <span
-            className="flex-1 overflow-hidden text-left text-ellipsis whitespace-nowrap"
-            style={{ ...MENU_ROW, color: colors.gray[700] }}
-          >
-            {PROFILE_NAME}
-          </span>
-          <ChevronDown size={16} color={colors.gray[400]} aria-hidden />
-        </>
-      )}
+      <span
+        className="flex-1 overflow-hidden text-left text-ellipsis whitespace-nowrap"
+        style={{ ...MENU_ROW, color: colors.gray[700] }}
+      >
+        {PROFILE_NAME}
+      </span>
+      <ChevronDown size={16} color={colors.gray[400]} aria-hidden />
     </button>
   )
 }
@@ -175,61 +158,53 @@ function AppShell({ children }: { children?: ReactNode }) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
 
-  /**
-   * Only the boolean is stored, never the enum. Compared against COLLAPSED specifically,
-   * not `!isExpanded`: the third state, INTERMEDIATE, is the hover-peek where the rail is
-   * visually wide again, and Blend's own SidebarV2Footer makes exactly this comparison for
-   * its justifyContent. Storing the enum would re-render the whole chrome on the first
-   * mouse-enter of an already-expanded rail — a new value, an unchanged answer.
-   */
-  const [isRailCollapsed, setIsRailCollapsed] = useState(!RAIL_STARTS_EXPANDED)
-
-  /**
-   * Stable by necessity, not tidiness: SidebarV2.tsx:171-173 keys an effect on this
-   * callback, so an inline arrow would re-fire it on every SidebarV2 render.
-   */
-  const handleSidebarState = useCallback(
-    (state: SidebarV2StateChangeType) =>
-      setIsRailCollapsed(state === SidebarV2StateChange.COLLAPSED),
-    [],
-  )
-
-  const isHomeActive = pathname === HOME_PATH
-  const isConfiguratorActive = pathname === CONFIGURATOR_PATH
-  const isAlertsActive = pathname === ALERTS_PATH
+  const activePath = NAV_PATHS.has(pathname) ? pathname : null
+  const nav = useNavState()
+  // Blend's own nav list is hidden on desktop in favour of EditableNav, but SidebarV2 still
+  // needs the tree: it draws its panel only when `data` is non-empty, and its mobile nav
+  // reads it directly.
   const navigationData = useMemo(
     () =>
-      buildNavigationData({ isHomeActive, isConfiguratorActive, isAlertsActive, navigate }),
-    [isHomeActive, isConfiguratorActive, isAlertsActive, navigate],
+      buildNavigationData({
+        sections: nav.sections,
+        nameOf: (id) => nameOf(nav, id),
+        activePath,
+        navigate,
+      }),
+    [nav, activePath, navigate],
   )
 
   return (
-    <SidebarV2
-      data={navigationData}
-      showHierarchyLines
-      secondarySidebar={{
-        items: tenants.map(({ label, value, icon }) => ({
-          label,
-          value,
-          icon: <img src={icon} alt="" className="block size-4 object-contain" />,
-        })),
-        selected: tenant,
-        onSelect: setTenant,
-      }}
-      merchantInfo={{
-        items: merchants,
-        selected: merchant,
-        onSelect: setMerchant,
-      }}
-      topbar={<TopbarContent />}
-      rightActions={<TopbarActions />}
-      defaultIsExpanded={RAIL_STARTS_EXPANDED}
-      sidebarCollapseKey={SIDEBAR_COLLAPSE_KEY}
-      onSidebarStateChange={handleSidebarState}
-      footer={<SidebarFooter collapsed={isRailCollapsed} />}
-    >
-      {children}
-    </SidebarV2>
+    <>
+      <SidebarV2
+        data={navigationData}
+        showHierarchyLines
+        secondarySidebar={{
+          items: tenants.map(({ label, value, icon }) => ({
+            label,
+            value,
+            icon: <img src={icon} alt="" className="block size-4 object-contain" />,
+          })),
+          selected: tenant,
+          onSelect: setTenant,
+        }}
+        merchantInfo={{
+          items: merchants,
+          selected: merchant,
+          onSelect: setMerchant,
+        }}
+        topbar={<TopbarContent />}
+        rightActions={<TopbarActions />}
+        isExpanded
+        onExpandedChange={keepOpen}
+        sidebarCollapseKey={NO_COLLAPSE_KEY}
+        footer={<SidebarFooter />}
+      >
+        {children}
+      </SidebarV2>
+      <EditableNav activePath={activePath} navigate={navigate} />
+      <DeletedModulesBar />
+    </>
   )
 }
 

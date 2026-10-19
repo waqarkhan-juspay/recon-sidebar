@@ -6,7 +6,33 @@ import {
   TagV2Type,
   type DirectoryData,
 } from '@juspay/blend-design-system'
-import { BellRing, BookOpen, House, MessageSquareCheck, User, Wrench } from 'lucide-react'
+import {
+  BellDot,
+  BellRing,
+  BookOpen,
+  ChartLine,
+  ClipboardList,
+  FileClock,
+  FileText,
+  FileUp,
+  Gavel,
+  History,
+  House,
+  Landmark,
+  ListChecks,
+  MessageSquareCheck,
+  Percent,
+  Play,
+  Scale,
+  Store,
+  Ticket,
+  TriangleAlert,
+  Upload,
+  User,
+  Wrench,
+  type LucideIcon,
+} from 'lucide-react'
+import type { ReactNode } from 'react'
 import announcementIcon from '../assets/icons/announcement-01.svg'
 import globeIcon from '../assets/icons/globe-01.svg'
 import MaskIcon from '../components/MaskIcon'
@@ -14,142 +40,187 @@ import { ICON_SIZE } from './chrome'
 
 /**
  * Home has its own path rather than sitting at the root, because the root is a redirect to
- * the Configurator — the app's landing page (src/router.tsx). Leaving Home at `/` would
- * make the nav row a dead end: clicking it would bounce straight back here.
+ * the Configurator — the app's landing page (src/router.tsx).
  */
 export const HOME_PATH = '/home'
 export const CONFIGURATOR_PATH = '/configurator'
 export const ALERTS_PATH = '/alerts'
 
 /**
- * The collapsed sections below Reconciliation — node 4405:10766 draws each as a label and a
- * chevron with nothing under it, which is a section whose items have not been designed yet
- * rather than an empty one. `items: []` is what Directory renders for that: the label, the
- * chevron, and no rows.
- *
- * Labels are given in sentence case because Directory uppercases them itself; writing them
- * shouty here would only make them harder to read in this file.
+ * One module in the sidebar. `id` is identity and never changes; `label` is only the
+ * default name — people can rename a module on this branch (src/layout/nav-store.ts), and
+ * its route stays where it was.
  */
-const PLACEHOLDER_SECTIONS = ['Offers', 'Mandates', 'Smart Convert', 'Monitoring']
-
-export type NavigationOptions = {
-  /**
-   * Which nav item is the active route, as booleans rather than the pathname, so that
-   * navigating between two routes that are both "not this item" does not rebuild a
-   * byte-identical tree — SidebarV2 re-binds scroll and resize listeners on a new `data`
-   * identity (SidebarV2.tsx:230-274).
-   */
-  isHomeActive: boolean
-  isConfiguratorActive: boolean
-  isAlertsActive: boolean
-  /** Router push. Blend's NavItem does no routing of its own — see below. */
-  navigate: (to: string) => void
+export type NavModule = {
+  id: string
+  label: string
+  /** Modules without one are the design's labels with no page behind them. */
+  href?: string
+  icon: ReactNode
+  /** The page's tab row, transcribed from the product. People can add more. */
+  tabs?: string[]
+  badge?: string
 }
 
+export type NavSectionDefault = {
+  id: string
+  /** The heading over the section. The top section has none. */
+  label?: string
+  /** Prefix each item with its position — "1. Analytics". */
+  numbered?: boolean
+  defaultOpen: boolean
+  itemIds: string[]
+}
+
+const slug = (label: string) =>
+  label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
+const lucide = (Icon: LucideIcon) => <Icon size={ICON_SIZE} />
+
+const navModule = (
+  label: string,
+  icon: ReactNode,
+  extra: Partial<Omit<NavModule, 'label' | 'icon'>> = {},
+): NavModule => ({ id: slug(label), label, icon, ...extra })
+
+/** A Reconciliation module: routed, and at the label's slug unless it says otherwise. */
+const recon = (
+  label: string,
+  Icon: LucideIcon,
+  extra: Partial<Omit<NavModule, 'label' | 'icon'>> = {},
+) => navModule(label, lucide(Icon), { href: `/${slug(label)}`, ...extra })
+
+const TOP_MODULES: NavModule[] = [
+  navModule('Home', lucide(House), { href: HOME_PATH }),
+  navModule('Marketplace', <MaskIcon src={globeIcon} size={ICON_SIZE} />),
+  navModule('What’s New', <MaskIcon src={announcementIcon} size={ICON_SIZE} />, { id: 'whats-new' }),
+  navModule('Users', lucide(User)),
+  navModule('Orders', lucide(BookOpen)),
+  navModule('Action Center', lucide(MessageSquareCheck), { badge: 'Beta' }),
+]
+
+const RECON_MODULES: NavModule[] = [
+  recon('Analytics', ChartLine),
+  recon('Reports', FileText),
+  recon('Exception', TriangleAlert),
+  recon('Upload Files', Upload, { tabs: ['File Upload'] }),
+  recon('Run Recon', Play),
+  recon('Settlement Alerts', BellDot),
+  recon('Reconciliation Alerts', BellRing, { href: ALERTS_PATH }),
+  recon('Reconciliation Tickets', Ticket, {
+    tabs: ['Exception', 'SFTP Config', 'Scheduled Jobs', 'Configuration', 'Settlement Report'],
+  }),
+  recon('Reports Tracker', FileClock),
+  recon('Configurator', Wrench, {
+    href: CONFIGURATOR_PATH,
+    tabs: [
+      'Report Config',
+      'SFTP Config',
+      'Schedule Jobs',
+      'Configuration Setup',
+      'Recon Configs',
+      'Query Jobs',
+      'SFTP Setup',
+      'Settlement Report',
+    ],
+  }),
+  recon('Dispute Management', Scale, { tabs: ['Merchants'] }),
+  recon('Dispute Management-OPS', Gavel, { tabs: ['Merchants'] }),
+  recon('Recon OPS File Upload', FileUp),
+  recon('Recon Fee Config', Percent),
+  recon('Settlement Summary', ClipboardList, { tabs: ['Settlement Summary'] }),
+  recon('Settlement Instructions', ListChecks, { tabs: ['Settlement Instructions'] }),
+  recon('Recon Settlement History', History),
+  recon('Vendor Settlement', Store),
+  recon('Recon Bene Details', Landmark),
+]
+
 /**
- * Built per render rather than exported as a constant, because nav items need the router:
- * `NavItem.tsx:352` calls `preventDefault()` on every plain left click and does not route,
- * so `href` alone goes nowhere and an `onClick` is required. `href` still earns its place —
- * cmd/ctrl-click bails out before that handler and opens the real URL in a new tab.
- *
- * Only Home, Configurator and Alerts have routes. The rest are the design's labels, drawn
- * so the rail reads as the product's nav rather than the three pages that exist — they are
- * deliberately inert rather than pointing at a 404.
+ * Every module, by id. This is the one registry: the router reads the routed ones, and the
+ * sidebar's default layout below reads all of them.
+ */
+export const MODULES: Record<string, NavModule> = Object.fromEntries(
+  [...TOP_MODULES, ...RECON_MODULES].map((m) => [m.id, m]),
+)
+
+export const ROUTED_MODULES = Object.values(MODULES).filter(
+  (m): m is NavModule & { href: string } => !!m.href,
+)
+
+/** The sidebar as the product draws it, before anyone edits it. */
+export const DEFAULT_SECTIONS: NavSectionDefault[] = [
+  { id: 'main', defaultOpen: true, itemIds: TOP_MODULES.map((m) => m.id) },
+  {
+    id: 'reconciliation',
+    label: 'Reconciliation',
+    numbered: true,
+    defaultOpen: true,
+    itemIds: RECON_MODULES.map((m) => m.id),
+  },
+  // Sections the design draws with nothing under them yet.
+  ...['Offers', 'Mandates', 'Smart Convert', 'Monitoring'].map((label) => ({
+    id: slug(label),
+    label,
+    defaultOpen: false,
+    itemIds: [],
+  })),
+]
+
+export const SECTION_BY_ID = Object.fromEntries(DEFAULT_SECTIONS.map((s) => [s.id, s]))
+
+/** How a section is named where it is not drawn as a heading — the deleted-modules bar. */
+export const sectionName = (sectionId: string) =>
+  SECTION_BY_ID[sectionId]?.label ?? 'Main menu'
+
+/** "3. Analytics" in a numbered section, the plain name everywhere else. */
+export const displayLabel = (name: string, sectionId: string, index: number) =>
+  SECTION_BY_ID[sectionId]?.numbered ? `${index + 1}. ${name}` : name
+
+/**
+ * The same layout in Blend's shape, for SidebarV2's mobile nav. On desktop the sidebar draws
+ * our own editable list instead (src/layout/EditableNav.tsx).
  */
 export function buildNavigationData({
-  isHomeActive,
-  isConfiguratorActive,
-  isAlertsActive,
+  sections,
+  nameOf,
+  activePath,
   navigate,
-}: NavigationOptions): DirectoryData[] {
-  return [
-    {
-      items: [
-        {
-          label: 'Home',
-          leftSlot: <House size={ICON_SIZE} />,
-          href: HOME_PATH,
-          onClick: () => navigate(HOME_PATH),
-          isSelected: isHomeActive,
+}: {
+  sections: { id: string; itemIds: string[] }[]
+  nameOf: (id: string) => string
+  activePath: string | null
+  navigate: (to: string) => void
+}): DirectoryData[] {
+  return sections.map((section) => {
+    const defaults = SECTION_BY_ID[section.id]
+    return {
+      label: defaults?.label,
+      isCollapsible: !!defaults?.label,
+      defaultOpen: defaults?.defaultOpen ?? true,
+      items: section.itemIds.map((id, index) => {
+        const m = MODULES[id]
+        return {
+          label: displayLabel(nameOf(id), section.id, index),
+          leftSlot: m.icon,
+          ...(m.badge && {
+            rightSlot: (
+              <TagV2
+                text={m.badge}
+                type={TagV2Type.SUBTLE}
+                size={TagV2Size.XS}
+                subType={TagV2SubType.SQUARICAL}
+                color={TagV2Color.NEUTRAL}
+              />
+            ),
+          }),
+          ...(m.href && {
+            href: m.href,
+            onClick: () => navigate(m.href!),
+            isSelected: activePath === m.href,
+          }),
           showOnMobile: true,
-        },
-        {
-          label: 'Marketplace',
-          leftSlot: <MaskIcon src={globeIcon} size={ICON_SIZE} />,
-          showOnMobile: true,
-        },
-        {
-          label: 'What’s New',
-          leftSlot: <MaskIcon src={announcementIcon} size={ICON_SIZE} />,
-          showOnMobile: true,
-        },
-        {
-          label: 'Users',
-          leftSlot: <User size={ICON_SIZE} />,
-          showOnMobile: true,
-        },
-        {
-          label: 'Orders',
-          leftSlot: <BookOpen size={ICON_SIZE} />,
-          showOnMobile: true,
-        },
-        {
-          label: 'Action Center',
-          leftSlot: <MessageSquareCheck size={ICON_SIZE} />,
-          // `rightSlot` lands the badge beside the label rather than against the far edge
-          // of the row, which is what the design draws: NavItem does give the label
-          // `flexGrow: 1` (NavItem.tsx:434), but the block holding it is content-sized, so
-          // there is no free space for the label to claim and the tag follows it directly.
-          //
-          // The one thing lost is the announcement — NavItem wraps the slot in
-          // `aria-hidden` (NavItem.tsx:449), so "Beta" is decoration to a screen reader.
-          rightSlot: (
-            <TagV2
-              text="Beta"
-              type={TagV2Type.SUBTLE}
-              size={TagV2Size.XS}
-              subType={TagV2SubType.SQUARICAL}
-              color={TagV2Color.NEUTRAL}
-            />
-          ),
-          showOnMobile: true,
-        },
-      ],
-    },
-    {
-      label: 'Reconciliation',
-      isCollapsible: true,
-      defaultOpen: true,
-      items: [
-        {
-          label: 'Configurator',
-          // The design names this one outright — "lucide/wrench" — where its siblings are
-          // Untitled UI glyphs.
-          leftSlot: <Wrench size={ICON_SIZE} />,
-          href: CONFIGURATOR_PATH,
-          onClick: () => navigate(CONFIGURATOR_PATH),
-          // `isSelected` is what actually drives the highlight — it wins unconditionally
-          // over Directory's `activeItem` prop, and the mobile nav reads only this.
-          isSelected: isConfiguratorActive,
-          // Without this the item is absent from the mobile drawer, where the desktop
-          // nav is display:none — i.e. unreachable between 320px and 1024px.
-          showOnMobile: true,
-        },
-        {
-          label: 'Alerts',
-          leftSlot: <BellRing size={ICON_SIZE} />,
-          href: ALERTS_PATH,
-          onClick: () => navigate(ALERTS_PATH),
-          isSelected: isAlertsActive,
-          showOnMobile: true,
-        },
-      ],
-    },
-    ...PLACEHOLDER_SECTIONS.map((label) => ({
-      label,
-      isCollapsible: true,
-      defaultOpen: false,
-      items: [],
-    })),
-  ]
+        }
+      }),
+    }
+  })
 }
