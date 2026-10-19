@@ -13,6 +13,7 @@ import {
   ClipboardList,
   FileClock,
   FileText,
+  File,
   FileUp,
   Gavel,
   History,
@@ -125,6 +126,17 @@ const RECON_MODULES: NavModule[] = [
   recon('Recon Bene Details', Landmark),
 ]
 
+/** Pages people add from the sidebar live under here — `/m/<id>`. */
+export const CUSTOM_PATH = '/m'
+
+/** A module someone added in the sidebar: a blank page with a tab row, like the rest. */
+export const customModule = (id: string, label: string): NavModule => ({
+  id,
+  label,
+  href: `${CUSTOM_PATH}/${id}`,
+  icon: lucide(File),
+})
+
 /**
  * Every module, by id. This is the one registry: the router reads the routed ones, and the
  * sidebar's default layout below reads all of them.
@@ -165,11 +177,13 @@ export const displayLabel = (name: string, sectionId: string, index: number) =>
 export function buildNavigationData({
   sections,
   nameOf,
+  moduleOf,
   activePath,
   navigate,
 }: {
   sections: { id: string; itemIds: string[] }[]
   nameOf: (id: string) => string
+  moduleOf: (id: string) => NavModule | undefined
   activePath: string | null
   navigate: (to: string) => void
 }): DirectoryData[] {
@@ -179,8 +193,9 @@ export function buildNavigationData({
       label: defaults?.label,
       isCollapsible: !!defaults?.label,
       defaultOpen: defaults?.defaultOpen ?? true,
-      items: section.itemIds.map((id, index) => {
-        const m = MODULES[id]
+      items: section.itemIds.flatMap((id, index) => {
+        const m = moduleOf(id)
+        if (!m) return []
         return {
           label: displayLabel(nameOf(id), section.id, index),
           leftSlot: m.icon,

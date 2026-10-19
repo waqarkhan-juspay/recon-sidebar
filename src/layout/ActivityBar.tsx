@@ -10,6 +10,7 @@ import { Activity, ChevronDown, History, Lock, PanelTop, RotateCcw, Trash2 } fro
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { displayName, useHistory, useSession, type HistoryEvent } from '../auth/session'
 import {
+  moduleOf,
   nameOf,
   restore,
   restoreVersion,
@@ -18,7 +19,7 @@ import {
   type DeletedEntry,
   type NavState,
 } from './nav-store'
-import { MODULES, sectionName } from './navigation'
+import { sectionName } from './navigation'
 import { when } from './when'
 
 const { colors } = FOUNDATION_THEME
@@ -241,7 +242,8 @@ function Empty({ icon, children }: { icon?: ReactNode; children: ReactNode }) {
 function DeletedRow({ entry, nav }: { entry: DeletedEntry; nav: NavState }) {
   const canEdit = useCanEdit()
   const isTab = entry.kind === 'tab'
-  const mod = MODULES[isTab ? entry.moduleId : entry.id]
+  const mod = moduleOf(nav, isTab ? entry.moduleId : entry.id)
+  if (!mod) return null
   const name = isTab ? entry.label : entry.name
   const renamed = !isTab && entry.name !== mod.label
   // The tag beside the name says what kind of thing it was; this line says where it was.
@@ -277,6 +279,7 @@ function DeletedRow({ entry, nav }: { entry: DeletedEntry; nav: NavState }) {
         </span>
         <span style={{ ...SMALL, color: colors.gray[500] }}>
           {where} · {when(entry.deletedAt)}
+          {entry.by && ` · by ${displayName(entry.by).split(' ')[0]}`}
         </span>
       </span>
       {canEdit && <GhostAction onClick={() => restore(entry.key)}>Restore</GhostAction>}
@@ -284,10 +287,9 @@ function DeletedRow({ entry, nav }: { entry: DeletedEntry; nav: NavState }) {
   )
 }
 
-/** One change: who, what, when — and, for editors, a way back to the sidebar as it was then. */
+/** One change: who (the avatar), what, when — and, for editors, a way back to the sidebar as it was then. */
 function VersionRow({ event, isLatest }: { event: HistoryEvent; isLatest: boolean }) {
   const [confirming, setConfirming] = useState(false)
-  const name = displayName(event.actor)
 
   // The confirmation lapses on its own, so a stray second click later does nothing.
   useEffect(() => {
@@ -300,12 +302,8 @@ function VersionRow({ event, isLatest }: { event: HistoryEvent; isLatest: boolea
     <li className="flex items-start gap-3 rounded-lg px-2.5 py-2">
       <Initials email={event.actor} />
       <span className="flex min-w-0 flex-1 flex-col">
-        <span style={{ ...TEXT, color: colors.gray[900] }}>
-          <span style={{ fontWeight: 600 }} title={event.actor}>
-            {name}
-          </span>{' '}
-          <span style={{ color: colors.gray[700] }}>{lowerFirst(event.summary)}</span>
-        </span>
+        {/* Who made it is the avatar's to say; the line is the change itself. */}
+        <span style={{ ...TEXT, color: colors.gray[900] }}>{event.summary}</span>
         <span style={{ ...SMALL, color: colors.gray[500] }}>
           {when(event.at)}
           {isLatest && ' · current version'}
@@ -328,8 +326,6 @@ function VersionRow({ event, isLatest }: { event: HistoryEvent; isLatest: boolea
   )
 }
 
-const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1)
-
 const AVATAR_TONES = ['primary', 'purple', 'orange', 'green'] as const
 
 function Initials({ email }: { email: string }) {
@@ -343,7 +339,9 @@ function Initials({ email }: { email: string }) {
   const tone = AVATAR_TONES[hash % AVATAR_TONES.length]
   return (
     <span
-      aria-hidden
+      role="img"
+      aria-label={name}
+      title={`${name} · ${email}`}
       className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full"
       style={{
         ...SMALL,

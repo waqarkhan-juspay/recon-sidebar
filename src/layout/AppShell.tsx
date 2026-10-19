@@ -23,8 +23,8 @@ import { CHROME_HOVER } from './chrome'
 import { displayName, signOut, useSession } from '../auth/session'
 import ActivityBar from './ActivityBar'
 import EditableNav from './EditableNav'
-import { nameOf, useNavState } from './nav-store'
-import { ROUTED_MODULES, buildNavigationData } from './navigation'
+import { moduleOf, nameOf, useNavState } from './nav-store'
+import { CUSTOM_PATH, ROUTED_MODULES, buildNavigationData } from './navigation'
 import { TopbarStatusIcons } from './topbar'
 
 const { colors } = FOUNDATION_THEME
@@ -205,7 +205,8 @@ function AppShell({ children }: { children?: ReactNode }) {
     [],
   )
 
-  const activePath = NAV_PATHS.has(pathname) ? pathname : null
+  const activePath =
+    NAV_PATHS.has(pathname) || pathname.startsWith(`${CUSTOM_PATH}/`) ? pathname : null
   const nav = useNavState()
   // Blend's own nav list is hidden on desktop in favour of EditableNav, but SidebarV2 still
   // needs the tree: it draws its panel only when `data` is non-empty, and its mobile nav
@@ -215,6 +216,7 @@ function AppShell({ children }: { children?: ReactNode }) {
       buildNavigationData({
         sections: nav.sections,
         nameOf: (id) => nameOf(nav, id),
+        moduleOf: (id) => moduleOf(nav, id),
         activePath,
         navigate,
       }),

@@ -6,7 +6,7 @@ import {
   TagV2SubType,
   TagV2Type,
 } from '@juspay/blend-design-system'
-import { ChevronDown, GripVertical, Pencil, Trash2 } from 'lucide-react'
+import { ChevronDown, GripVertical, Pencil, Plus, Trash2 } from 'lucide-react'
 import {
   useEffect,
   useState,
@@ -19,9 +19,11 @@ import {
 import { createPortal } from 'react-dom'
 import ChangeInfo from './ChangeInfo'
 import {
+  addModule,
   deleteModule,
   historyOf,
   moduleKey,
+  moduleOf,
   moveModule,
   nameOf,
   renameModule,
@@ -30,7 +32,7 @@ import {
   type Change,
   type NavState,
 } from './nav-store'
-import { DEFAULT_SECTIONS, MODULES, SECTION_BY_ID } from './navigation'
+import { CUSTOM_PATH, DEFAULT_SECTIONS, SECTION_BY_ID } from './navigation'
 
 const { colors } = FOUNDATION_THEME
 
@@ -74,6 +76,7 @@ function EditableNav({
   collapsed: boolean
 }) {
   const nav = useNavState()
+  const canEdit = useCanEdit()
   const container = useDirectoryContainer()
   const [dragId, setDragId] = useState<string | null>(null)
   const [drop, setDrop] = useState<DropTarget | null>(null)
@@ -179,7 +182,7 @@ function EditableNav({
                     name={nameOf(nav, id)}
                     changes={historyOf(nav, moduleKey(id))}
                     numbered={!!defaults.numbered}
-                    isSelected={!!MODULES[id].href && MODULES[id].href === activePath}
+                    isSelected={!!activePath && moduleOf(nav, id)?.href === activePath}
                     isDragging={dragId === id}
                     isEditing={editingId === id}
                     dropEdge={
@@ -225,6 +228,7 @@ function EditableNav({
                 )}
               </ul>
             )}
+            {isOpen && canEdit && !dragId && <AddItem sectionId={section.id} navigate={navigate} />}
           </div>
         )
       })}
@@ -263,7 +267,8 @@ function CollapsedNav({
               }
             >
               {section.itemIds.map((id, index) => {
-                const mod = MODULES[id]
+                const mod = moduleOf(nav, id)
+                if (!mod) return null
                 const name = `${numbered ? `${index + 1}. ` : ''}${nameOf(nav, id)}`
                 const isSelected = !!mod.href && mod.href === activePath
                 return (
@@ -297,6 +302,58 @@ function CollapsedNav({
           )
         })}
     </nav>
+  )
+}
+
+/**
+ * The ghost "Add item" row at the foot of a section. Turns into a name field in place; the new
+ * item lands at the end of the section and opens.
+ */
+function AddItem({ sectionId, navigate }: { sectionId: string; navigate: (to: string) => void }) {
+  const [adding, setAdding] = useState(false)
+
+  if (adding) {
+    return (
+      <div className="flex min-h-[33px] items-center gap-[10px] py-[4px] pr-2 pl-3">
+        <span className="flex size-[14px] shrink-0 items-center justify-center">
+          <Plus size={14} color={colors.gray[400]} />
+        </span>
+        <RenameField
+          name=""
+          prefix=""
+          ariaLabel="New item name"
+          placeholder="Item name"
+          onDone={() => setAdding(false)}
+          onSubmit={(value) => {
+            const result = addModule(sectionId, value)
+            if ('error' in result) return result.error
+            navigate(`${CUSTOM_PATH}/${result.id}`)
+            return null
+          }}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setAdding(true)}
+      className="flex min-h-[33px] w-full cursor-pointer items-center gap-[10px] rounded border-none bg-transparent py-[6px] pl-3 text-left hover:bg-[var(--row-hover)] hover:text-[color:var(--hover-text)]"
+      style={
+        {
+          ...ROW_TEXT,
+          '--row-hover': colors.gray[50],
+          '--hover-text': colors.gray[700],
+          color: colors.gray[500],
+        } as CSSProperties
+      }
+    >
+      <span className="flex size-[14px] shrink-0 items-center justify-center">
+        <Plus size={14} />
+      </span>
+      Add item
+    </button>
   )
 }
 
@@ -334,7 +391,7 @@ function NavRow({
   onDragEnd: () => void
   onDragOver: (event: DragEvent<HTMLLIElement>) => void
 }) {
-  const mod = MODULES[id]
+  const mod = moduleOf(useNavState(), id)!
   // Guests see the sidebar exactly as editors do, minus every way of changing it.
   const canEdit = useCanEdit()
   const color = isSelected ? colors.gray[1000] : colors.gray[600]
@@ -500,17 +557,29 @@ function RenameField({
   name,
   prefix,
   onDone,
+  onSubmit,
+  ariaLabel = 'Module name',
+  placeholder,
 }: {
-  id: string
+  id?: string
   name: string
   prefix: string
   onDone: () => void
+  /** Instead of renaming `id`: what to do with the name. Returns a problem, or null. */
+  onSubmit?: (value: string) => string | null
+  ariaLabel?: string
+  placeholder?: string
 }) {
   const [value, setValue] = useState(name)
   const [error, setError] = useState<string | null>(null)
 
   const commit = (closeOnError: boolean) => {
-    const problem = value.trim() === name ? null : renameModule(id, value)
+    if (onSubmit && !value.trim()) return onDone()
+    const problem = onSubmit
+      ? onSubmit(value)
+      : value.trim() === name
+        ? null
+        : renameModule(id!, value)
     if (!problem || closeOnError) onDone()
     else setError(problem)
   }
@@ -524,8 +593,9 @@ function RenameField({
       )}
       <input
         autoFocus
-        aria-label="Module name"
+        aria-label={ariaLabel}
         aria-invalid={!!error}
+        placeholder={placeholder}
         value={value}
         onFocus={(event) => event.currentTarget.select()}
         onChange={(event) => {

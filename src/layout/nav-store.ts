@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { DEFAULT_SECTIONS, MODULES, sectionName } from './navigation'
+import { DEFAULT_SECTIONS, MODULES, customModule, sectionName, type NavModule } from './navigation'
 
 /**
  * Everyone's edits to the sidebar on this branch: the order of modules, their names, the ones
@@ -35,6 +35,8 @@ export type DeletedModule = {
   /** How many modules the section had then, so "4 of 19" can be said later. */
   sectionSize: number
   deletedAt: number
+  /** Who deleted it. Absent on entries from before this was recorded. */
+  by?: string
 }
 
 export type DeletedTab = {
@@ -46,6 +48,7 @@ export type DeletedTab = {
   index: number
   rowSize: number
   deletedAt: number
+  by?: string
   /** The tab's rename history, carried while it is deleted and put back on restore. */
   history?: Change[]
 }
@@ -64,6 +67,8 @@ export type NavState = {
    * by its label, so its history moves to the new key whenever it is renamed.
    */
   history: Record<string, Change[]>
+  /** Modules people added from the sidebar, by id. Kept even once deleted, so they restore. */
+  custom: Record<string, { label: string }>
 }
 
 const STORAGE_KEY = 'recon-demos:sidebar:v1'
@@ -74,6 +79,7 @@ const defaultState = (): NavState => ({
   deleted: [],
   tabs: {},
   history: {},
+  custom: {},
 })
 
 type StoredState = Partial<Omit<NavState, 'deleted'>> & {
@@ -106,8 +112,10 @@ function normalise(raw: StoredState | null): NavState {
     ),
   }
 
+  const custom = raw.custom ?? {}
+  const known = (id: string) => !!MODULES[id] || !!custom[id]
   const seen = new Set<string>()
-  const keep = (id: string) => !!MODULES[id] && !seen.has(id) && !!seen.add(id)
+  const keep = (id: string) => known(id) && !seen.has(id) && !!seen.add(id)
 
   const stored = new Map((raw.sections ?? []).map((s) => [s.id, s.itemIds ?? []]))
   const sections = base.sections.map(({ id }) => ({
@@ -115,7 +123,7 @@ function normalise(raw: StoredState | null): NavState {
     itemIds: (stored.get(id) ?? []).filter(keep),
   }))
   const deleted = (raw.deleted as DeletedEntry[]).filter((d) =>
-    d.kind === 'tab' ? !!MODULES[d.moduleId] : keep(d.id),
+    d.kind === 'tab' ? known(d.moduleId) : keep(d.id),
   )
 
   for (const section of DEFAULT_SECTIONS) {
@@ -131,8 +139,9 @@ function normalise(raw: StoredState | null): NavState {
     sections,
     names: raw.names ?? {},
     deleted,
-    tabs: Object.fromEntries(Object.entries(raw.tabs ?? {}).filter(([id]) => !!MODULES[id])),
+    tabs: Object.fromEntries(Object.entries(raw.tabs ?? {}).filter(([id]) => known(id))),
     history: raw.history ?? {},
+    custom,
   }
 }
 
@@ -201,7 +210,14 @@ export const useNavState = () => useSyncExternalStore(subscribe, () => state)
 /** Guests see everything but can change nothing; the controls for changing hide for them. */
 export const useCanEdit = () => useSyncExternalStore(subscribe, () => role === 'editor')
 
-export const nameOf = (s: NavState, id: string) => s.names[id] ?? MODULES[id]?.label ?? id
+export const nameOf = (s: NavState, id: string) =>
+  s.names[id] ?? MODULES[id]?.label ?? s.custom[id]?.label ?? id
+
+/** A module from the registry, or one someone added. */
+export const moduleOf = (s: NavState, id: string): NavModule | undefined =>
+  MODULES[id] ?? (s.custom[id] ? customModule(id, s.custom[id].label) : undefined)
+
+const defaultLabel = (s: NavState, id: string) => MODULES[id]?.label ?? s.custom[id]?.label
 
 export const moduleKey = (id: string) => `module:${id}`
 export const tabKey = (moduleId: string, label: string) => `tab:${moduleId}:${label}`
@@ -225,19 +241,46 @@ function rekey(s: NavState, from: string, to: string, change?: Change) {
 const liveIds = (s: NavState) => s.sections.flatMap((section) => section.itemIds)
 
 /** Returns an error to show, or null when the rename went through. */
-export function renameModule(id: string, raw: string): string | null {
-  const name = raw.trim().replace(/\s+/g, ' ')
+function moduleNameProblem(name: string, except?: string): string | null {
   if (!name) return 'Name can’t be empty'
   if (name.length > 40) return 'Too long — 40 characters max'
   const clash = liveIds(state).some(
-    (other) => other !== id && nameOf(state, other).toLowerCase() === name.toLowerCase(),
+    (other) => other !== except && nameOf(state, other).toLowerCase() === name.toLowerCase(),
   )
-  if (clash) return 'That name is taken'
+  return clash ? 'That name is taken' : null
+}
+
+/**
+ * A new module at the end of a section: a blank page of its own, at `/m/<id>`. Returns the
+ * new module's id, or a problem with the name.
+ */
+export function addModule(sectionId: string, raw: string): { id: string } | { error: string } {
+  const label = raw.trim().replace(/\s+/g, ' ')
+  const problem = moduleNameProblem(label)
+  if (problem) return { error: problem }
+  const id = `custom-${Date.now().toString(36)}`
+  commit(
+    {
+      ...state,
+      custom: { ...state.custom, [id]: { label } },
+      sections: state.sections.map((s) =>
+        s.id === sectionId ? { ...s, itemIds: [...s.itemIds, id] } : s,
+      ),
+    },
+    { kind: 'add', summary: `Added “${label}” to ${sectionName(sectionId)}` },
+  )
+  return { id }
+}
+
+export function renameModule(id: string, raw: string): string | null {
+  const name = raw.trim().replace(/\s+/g, ' ')
+  const problem = moduleNameProblem(name, id)
+  if (problem) return problem
 
   const was = nameOf(state, id)
   if (name === was) return null
   const names = { ...state.names }
-  if (name === MODULES[id]?.label) delete names[id]
+  if (name === defaultLabel(state, id)) delete names[id]
   else names[id] = name
   const history = logged(state, moduleKey(id), { from: was, to: name, at: Date.now(), by: actor })
   commit({ ...state, names, history }, { kind: 'rename', summary: `Renamed “${was}” to “${name}”` })
@@ -283,6 +326,7 @@ export function deleteModule(id: string) {
     index: from.itemIds.indexOf(id),
     sectionSize: from.itemIds.length,
     deletedAt,
+    by: actor,
   }
   commit(
     {
@@ -421,6 +465,7 @@ export function deleteTab(moduleId: string, label: string) {
     index,
     rowSize: row.length,
     deletedAt,
+    by: actor,
     history: state.history[tabKey(moduleId, label)],
   }
   const { [tabKey(moduleId, label)]: _carried, ...history } = state.history

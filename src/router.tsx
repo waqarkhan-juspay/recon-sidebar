@@ -4,7 +4,7 @@ import About from './pages/About.tsx'
 import Blend from './pages/Blend.tsx'
 import CreateReportConfig from './pages/create-report-config'
 import NotFound from './pages/NotFound.tsx'
-import ModulePage from './pages/ModulePage.tsx'
+import ModulePage, { AddedModulePage } from './pages/ModulePage.tsx'
 import { CONFIGURATOR_PATH, ROUTED_MODULES } from './layout/navigation.tsx'
 
 export const router = createBrowserRouter([
@@ -25,6 +25,8 @@ export const router = createBrowserRouter([
         path: href.slice(1),
         element: <ModulePage key={id} moduleId={id} />,
       })),
+      // Modules people add from the sidebar (src/layout/nav-store.ts addModule).
+      { path: 'm/:moduleId', element: <AddedModulePage /> },
     ],
   },
   // Deliberately a sibling of the shell route, not a child: this flow is a full-screen

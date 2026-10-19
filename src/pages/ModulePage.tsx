@@ -1,5 +1,6 @@
 import { FOUNDATION_THEME, TooltipV2Side } from '@juspay/blend-design-system'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { useParams } from 'react-router'
 import { useState, type CSSProperties, type DragEvent, type ReactNode } from 'react'
 import ChangeInfo from '../layout/ChangeInfo'
 import {
@@ -384,6 +385,12 @@ function AddTab({ moduleId, onAdded }: { moduleId: string; onAdded: (label: stri
       Add tab
     </button>
   )
+}
+
+/** The page for a module someone added in the sidebar, found by the id in its address. */
+export function AddedModulePage() {
+  const { moduleId = '' } = useParams()
+  return <ModulePage key={moduleId} moduleId={moduleId} />
 }
 
 export default ModulePage
