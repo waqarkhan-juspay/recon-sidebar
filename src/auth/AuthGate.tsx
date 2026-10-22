@@ -1,7 +1,14 @@
 import { ButtonV2, ButtonV2Size, ButtonV2Type, FOUNDATION_THEME } from '@juspay/blend-design-system'
 import { Eye, Lock } from 'lucide-react'
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
-import { continueAsGuest, signInWithGoogle, signOut, start, useSession } from './session'
+import {
+  continueAsGuest,
+  signInWithGoogle,
+  signOut,
+  start,
+  switchAccount,
+  useSession,
+} from './session'
 
 const { colors } = FOUNDATION_THEME
 
@@ -19,8 +26,9 @@ const BODY: CSSProperties = {
 }
 
 /**
- * Nothing of the app renders until the visitor has either signed in or chosen to look as a
- * guest. Every visit starts here (the session is per tab — src/auth/supabase.ts).
+ * Everyone lands in the dashboard as a guest — view only — with no sign-in screen first.
+ * Editors open the sign-in screen from the sidebar footer's Sign in; this gate draws it, and
+ * the screen for an account that is not an editor.
  */
 function AuthGate({ children }: { children: ReactNode }) {
   const session = useSession()
@@ -66,17 +74,14 @@ function AuthGate({ children }: { children: ReactNode }) {
                 buttonType={ButtonV2Type.PRIMARY}
                 size={ButtonV2Size.MEDIUM}
                 width="100%"
-                onClick={async () => {
-                  await signOut()
-                  continueAsGuest()
-                }}
+                onClick={() => void signOut()}
               />
               <ButtonV2
                 text="Use a different account"
                 buttonType={ButtonV2Type.SECONDARY}
                 size={ButtonV2Size.MEDIUM}
                 width="100%"
-                onClick={() => void signOut()}
+                onClick={() => void switchAccount()}
               />
             </div>
           </Card>

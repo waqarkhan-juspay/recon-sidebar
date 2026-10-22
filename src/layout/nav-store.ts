@@ -646,7 +646,7 @@ export function addV2Group(sectionId: string, raw: string): { id: string } | { e
       ...state,
       v2: {
         ...v2,
-        groups: { ...v2.groups, [id]: { label, icon: 'folder', pageIds: [], defaultOpen: true } },
+        groups: { ...v2.groups, [id]: { label, icon: 'folder', pageIds: [] } },
         sections: v2.sections.map((s) =>
           s.id === sectionId ? { ...s, groupIds: [...s.groupIds, id] } : s,
         ),
@@ -678,7 +678,7 @@ export function addV2Page(groupId: string, raw: string): { id: string } | { erro
         pages: { ...v2.pages, [id]: { label, description: '' } },
         groups: {
           ...v2.groups,
-          [groupId]: { ...group, pageIds: [...(group.pageIds ?? []), id], defaultOpen: true },
+          [groupId]: { ...group, pageIds: [...(group.pageIds ?? []), id] },
         },
       },
     },
@@ -735,7 +735,7 @@ export function moveV2Page(id: string, toGroupId: string, toIndex: number) {
   const into = [...(groups[toGroupId].pageIds ?? [])]
   const at = Math.max(0, Math.min(index, into.length))
   into.splice(at, 0, id)
-  groups[toGroupId] = { ...groups[toGroupId], pageIds: into, defaultOpen: true }
+  groups[toGroupId] = { ...groups[toGroupId], pageIds: into }
   const where =
     fromGroupId === toGroupId
       ? `position ${at + 1} in ${target.label}`
@@ -845,7 +845,7 @@ function restoreV2(entry: DeletedV2Group | DeletedV2Page, deleted: DeletedEntry[
         v2: {
           ...v2,
           pages: { ...v2.pages, [entry.id]: entry.page },
-          groups: { ...v2.groups, [entry.groupId]: { ...group, pageIds, defaultOpen: true } },
+          groups: { ...v2.groups, [entry.groupId]: { ...group, pageIds } },
         },
       },
       { kind: 'v2-restore', summary: `Restored “${entry.name}” to ${group.label} (version 2)` },

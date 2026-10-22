@@ -15,9 +15,9 @@ import { key, supabase, url } from './supabase'
  * Who is looking at the app, and the wiring between the sidebar store and Supabase.
  *
  *   loading       working out whether there is a session
- *   signed-out    the sign-in screen
+ *   signed-out    the sign-in screen, opened from the footer's Sign in
  *   denied        signed in with an email that is not an editor
- *   guest         chose "Continue as guest": everything visible, nothing editable
+ *   guest         where everyone starts: everything visible, nothing editable
  *   editor        one of the whitelisted emails
  *   unconfigured  a production build without Supabase settings — refuses to run
  *
@@ -42,7 +42,6 @@ export type HistoryEvent = {
   snapshot: unknown
 }
 
-const GUEST_KEY = 'recon-demos:guest'
 const LOCAL_HISTORY_KEY = 'recon-demos:history:v1'
 const LOCAL_ACTOR = 'you@localhost'
 
@@ -104,23 +103,29 @@ export async function signInWithGoogle(): Promise<string | null> {
 }
 
 export function continueAsGuest() {
-  try {
-    sessionStorage.setItem(GUEST_KEY, '1')
-  } catch {
-    // Without sessionStorage the choice lasts until the next reload, which is fine.
-  }
   void enter({ status: 'guest' })
 }
 
-export async function signOut() {
-  try {
-    sessionStorage.removeItem(GUEST_KEY)
-  } catch {
-    // Nothing stored, nothing to clear.
-  }
+/** The sign-in screen, for a guest who wants to edit (the footer's Sign in). */
+export function showSignIn() {
+  set({ status: 'signed-out' })
+}
+
+async function leave() {
   disconnect()
   if (supabase) await supabase.auth.signOut()
-  set({ status: 'signed-out' })
+}
+
+/** Sign out, and carry on looking as a guest. */
+export async function signOut() {
+  await leave()
+  continueAsGuest()
+}
+
+/** Sign out, and back to the sign-in screen to choose another Google account. */
+export async function switchAccount() {
+  await leave()
+  showSignIn()
 }
 
 // --- Start-up --------------------------------------------------------------------------
@@ -148,14 +153,9 @@ export function start() {
 
   void supabase.auth.getSession().then(({ data }) => {
     if (data.session) return fromAuth(data.session)
-    let guest = false
-    try {
-      guest = sessionStorage.getItem(GUEST_KEY) === '1'
-    } catch {
-      // Treat as not chosen.
-    }
-    if (guest) return enter({ status: 'guest' })
-    set({ status: 'signed-out' })
+    // No sign-in screen up front: everyone lands in the dashboard as a guest, and editors
+    // sign in from the sidebar footer when they want to make changes.
+    return enter({ status: 'guest' })
   })
 }
 
@@ -165,11 +165,6 @@ async function fromAuth(authSession: AuthSession) {
   if (error || !isEditor) {
     set({ status: 'denied', email })
     return
-  }
-  try {
-    sessionStorage.removeItem(GUEST_KEY)
-  } catch {
-    // Fine either way.
   }
   await enter({ status: 'editor', email })
 }

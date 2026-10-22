@@ -40,7 +40,6 @@ export type V2Group = {
   pageIds?: string[]
   /** For an item that is a page itself. */
   description?: string
-  defaultOpen?: boolean
 }
 
 export type V2PageRec = { label: string; description: string }
@@ -91,7 +90,7 @@ type Seed = [label: string, icon: string, subItems: string[] | null]
  * modules, regrouped. Analytics and Reports open into their reports, Upload Files gains two,
  * Dispute Management takes OPS in, and Settlement gathers its summary, instructions, vendor
  * and beneficiary pages. Ids come from the names, so addresses read well:
- * `/v2/reports/gateway-vs-bank`. Every item with sub-items starts open.
+ * `/v2/reports/gateway-vs-bank`. Every item starts collapsed (src/layout/NavV2.tsx).
  */
 const SEED: Record<string, Seed[]> = {
   main: [['Home', 'home', null]],
@@ -151,7 +150,7 @@ export function defaultV2State(): V2State {
         state.pages[pageId] = { label: page, description: '' }
         return pageId
       })
-      state.groups[id] = { label, icon, pageIds, defaultOpen: true }
+      state.groups[id] = { label, icon, pageIds }
     }
     state.sections.push({ id: section.id, groupIds })
   }

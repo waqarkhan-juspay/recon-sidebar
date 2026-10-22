@@ -68,7 +68,8 @@ function NavV2({
   const [drag, setDrag] = useState<Drag | null>(null)
   if (!container) return null
 
-  const isOpen = (id: string) => open[id] ?? !!v2.groups[id]?.defaultOpen
+  // Every item starts collapsed. Opening one is each viewer's own choice, not shared.
+  const isOpen = (id: string) => open[id] ?? false
   const go = (href: string) => (event: MouseEvent) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     event.preventDefault()

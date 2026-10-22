@@ -20,7 +20,7 @@ import merchantOrb from '../assets/merchant-hyper-recon.png'
 import MaskIcon from '../components/MaskIcon'
 import { font } from '../primitives'
 import { CHROME_HOVER } from './chrome'
-import { displayName, signOut, useSession } from '../auth/session'
+import { displayName, showSignIn, signOut, useSession } from '../auth/session'
 import ActivityBar from './ActivityBar'
 import { MERCHANTS_V2, RailHelpV2, TENANTS_V2, TopbarActionsV2, TopbarContentV2 } from './chrome-v2'
 import EditableNav from './EditableNav'
@@ -173,7 +173,7 @@ function SidebarFooter({ collapsed }: { collapsed: boolean }) {
           </span>
           <button
             type="button"
-            onClick={() => void signOut()}
+            onClick={() => (isEditor ? void signOut() : showSignIn())}
             className="flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border-none bg-transparent px-2 hover:bg-[var(--chrome-hover)]"
             style={{
               ...CHROME_HOVER,
