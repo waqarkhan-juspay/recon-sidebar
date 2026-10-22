@@ -996,7 +996,7 @@ button[aria-label='Close modal'] {
  * into the same panel instead. And the sidebar cannot be collapsed on this branch, so its
  * collapse button goes too.
  */
-[data-directory-container] > :not([data-editable-nav]) {
+[data-directory-container] > :not([data-custom-nav]) {
   display: none !important;
 }
 
@@ -1017,4 +1017,29 @@ button[aria-label='Close modal'] {
   .activity-bar {
     animation: none;
   }
+}
+
+/* Pointer drag (src/layout/pointer-drag.ts): no text selection, a grabbing hand everywhere,
+   and the label that follows the pointer. */
+body.is-pointer-dragging,
+body.is-pointer-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+.pointer-drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 2000;
+  pointer-events: none;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: #181b25;
+  color: #ffffff;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 0 6px 16px rgba(16, 24, 40, 0.18);
 }

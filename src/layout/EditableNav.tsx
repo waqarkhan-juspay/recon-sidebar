@@ -8,15 +8,16 @@ import {
 } from '@juspay/blend-design-system'
 import { ChevronDown, GripVertical, Pencil, Plus, Trash2 } from 'lucide-react'
 import {
-  useEffect,
   useState,
   type CSSProperties,
-  type DragEvent,
+  type PointerEvent,
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
+import { useDirectoryContainer } from './directory-container'
+import { startPointerDrag } from './pointer-drag'
 import ChangeInfo from './ChangeInfo'
 import {
   addModule,
@@ -48,22 +49,6 @@ const { colors } = FOUNDATION_THEME
 type DropTarget = { sectionId: string; index: number }
 
 const ROW_TEXT: CSSProperties = { fontSize: 14, lineHeight: '21px', fontWeight: 500 }
-
-/** Blend's panel can remount (e.g. crossing the mobile breakpoint), so keep looking. */
-function useDirectoryContainer() {
-  const [container, setContainer] = useState<HTMLElement | null>(null)
-  useEffect(() => {
-    const find = () => {
-      const next = document.querySelector<HTMLElement>('[data-directory-container]')
-      setContainer((current) => (current === next ? current : next))
-    }
-    find()
-    const observer = new MutationObserver(find)
-    observer.observe(document.body, { childList: true, subtree: true })
-    return () => observer.disconnect()
-  }, [])
-  return container
-}
 
 function EditableNav({
   activePath,
@@ -98,13 +83,47 @@ function EditableNav({
     setDrop(null)
   }
 
-  const onDrop = (event: DragEvent) => {
-    event.preventDefault()
-    if (dragId && drop) {
-      moveModule(dragId, drop.sectionId, drop.index)
-      setOpen((o) => ({ ...o, [drop.sectionId]: true }))
+  /** Where a module dropped at this point would go: beside a row, or onto a section. */
+  const targetAt = (x: number, y: number): DropTarget | null => {
+    const el = document.elementFromPoint(x, y)
+    const row = el?.closest<HTMLElement>('[data-nav-module]')
+    if (row) {
+      const sectionId = row.dataset.section!
+      const ids = nav.sections.find((s) => s.id === sectionId)?.itemIds ?? []
+      const rect = row.getBoundingClientRect()
+      const after = y > rect.top + rect.height / 2
+      return { sectionId, index: ids.indexOf(row.dataset.navModule!) + (after ? 1 : 0) }
     }
-    endDrag()
+    const zone = el?.closest<HTMLElement>('[data-drop-section]')
+    if (zone) {
+      const sectionId = zone.dataset.dropSection!
+      const ids = nav.sections.find((s) => s.id === sectionId)?.itemIds ?? []
+      return { sectionId, index: ids.length }
+    }
+    return null
+  }
+
+  const startDrag = (id: string) => (event: PointerEvent<HTMLDivElement>) => {
+    // The row's own controls (rename, delete, the ⓘ) are not handles.
+    if ((event.target as Element).closest('button, input, [role=img]')) return
+    let target: DropTarget | null = null
+    startPointerDrag(event, {
+      label: nameOf(nav, id),
+      onStart: () => setDragId(id),
+      onMove: (x, y) => {
+        const next = targetAt(x, y)
+        if (!next) return
+        target = next
+        setDrop(next)
+      },
+      onDrop: () => {
+        if (!target) return
+        moveModule(id, target.sectionId, target.index)
+        const sectionId = target.sectionId
+        setOpen((o) => ({ ...o, [sectionId]: true }))
+      },
+      onEnd: endDrag,
+    })
   }
 
   /** A drop that would leave the module where it is draws no indicator. */
@@ -117,19 +136,10 @@ function EditableNav({
   const activeDrop = drop && !isNoop(drop) ? drop : null
 
   return createPortal(
-    <nav
-      data-editable-nav
-      aria-label="Modules"
-      className="flex flex-col gap-6 p-3"
-      onDragOver={(event) => {
-        if (dragId) event.preventDefault()
-      }}
-      onDrop={onDrop}
-    >
+    <nav data-editable-nav data-custom-nav aria-label="Modules" className="flex flex-col gap-6 p-3">
       {nav.sections.map((section) => {
         const defaults = SECTION_BY_ID[section.id]
         const isOpen = !defaults.label || open[section.id]
-        const appendTarget = { sectionId: section.id, index: section.itemIds.length }
         const headerIsTarget =
           activeDrop?.sectionId === section.id &&
           activeDrop.index === section.itemIds.length &&
@@ -142,7 +152,7 @@ function EditableNav({
                 type="button"
                 aria-expanded={isOpen}
                 onClick={() => setOpen((o) => ({ ...o, [section.id]: !isOpen }))}
-                onDragOver={() => dragId && setDrop(appendTarget)}
+                data-drop-section={section.id}
                 className="flex cursor-pointer items-center justify-between rounded border-none px-3 py-0.5 text-left"
                 style={{
                   backgroundColor: headerIsTarget ? colors.primary[50] : 'transparent',
@@ -196,25 +206,12 @@ function EditableNav({
                     }
                     navigate={navigate}
                     onEdit={setEditingId}
-                    onDragStart={(event) => {
-                      event.dataTransfer.effectAllowed = 'move'
-                      event.dataTransfer.setData('text/plain', id)
-                      setDragId(id)
-                    }}
-                    onDragEnd={endDrag}
-                    onDragOver={(event) => {
-                      if (!dragId) return
-                      const rect = event.currentTarget.getBoundingClientRect()
-                      const after = event.clientY > rect.top + rect.height / 2
-                      const next = { sectionId: section.id, index: index + (after ? 1 : 0) }
-                      if (next.index !== drop?.index || next.sectionId !== drop?.sectionId)
-                        setDrop(next)
-                    }}
+                    onPointerDown={startDrag(id)}
                   />
                 ))}
                 {section.itemIds.length === 0 && dragId && (
                   <li
-                    onDragOver={() => setDrop(appendTarget)}
+                    data-drop-section={section.id}
                     className="flex h-[33px] items-center justify-center rounded"
                     style={{
                       ...ROW_TEXT,
@@ -228,7 +225,12 @@ function EditableNav({
                 )}
               </ul>
             )}
-            {isOpen && canEdit && !dragId && <AddItem sectionId={section.id} navigate={navigate} />}
+            {/* Hidden, not removed, while dragging, so the rows below do not shift. */}
+            {isOpen && canEdit && (
+              <div style={{ visibility: dragId ? 'hidden' : undefined }}>
+                <AddItem sectionId={section.id} navigate={navigate} />
+              </div>
+            )}
           </div>
         )
       })}
@@ -251,7 +253,12 @@ function CollapsedNav({
   navigate: (to: string) => void
 }) {
   return (
-    <nav data-editable-nav aria-label="Modules" className="flex flex-col items-center gap-3 py-3">
+    <nav
+      data-editable-nav
+      data-custom-nav
+      aria-label="Modules"
+      className="flex flex-col items-center gap-3 py-3"
+    >
       {nav.sections
         .filter((section) => section.itemIds.length > 0)
         .map((section, sectionIndex) => {
@@ -370,9 +377,7 @@ function NavRow({
   dropEdge,
   navigate,
   onEdit,
-  onDragStart,
-  onDragEnd,
-  onDragOver,
+  onPointerDown,
 }: {
   id: string
   index: number
@@ -387,9 +392,8 @@ function NavRow({
   dropEdge: 'before' | 'after' | null
   navigate: (to: string) => void
   onEdit: (id: string | null) => void
-  onDragStart: (event: DragEvent<HTMLDivElement>) => void
-  onDragEnd: () => void
-  onDragOver: (event: DragEvent<HTMLLIElement>) => void
+  /** Starts a drag once the pointer moves (src/layout/pointer-drag.ts). */
+  onPointerDown: (event: PointerEvent<HTMLDivElement>) => void
 }) {
   const mod = moduleOf(useNavState(), id)!
   // Guests see the sidebar exactly as editors do, minus every way of changing it.
@@ -436,7 +440,7 @@ function NavRow({
     'flex min-w-0 flex-1 items-center gap-[10px] self-stretch py-[6px] pr-[60px] pl-3 no-underline'
 
   return (
-    <li className="relative" data-nav-module={id} data-section={sectionId} onDragOver={onDragOver}>
+    <li className="relative" data-nav-module={id} data-section={sectionId}>
       {dropEdge && (
         <span
           aria-hidden
@@ -448,11 +452,10 @@ function NavRow({
         />
       )}
       <div
-        draggable={canEdit && !isEditing}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
+        draggable={false}
+        onPointerDown={canEdit && !isEditing ? onPointerDown : undefined}
         onDoubleClick={canEdit ? () => onEdit(id) : undefined}
-        className="group relative flex min-h-[33px] items-center rounded hover:bg-[var(--row-hover)]"
+        className="group relative flex min-h-[33px] items-center rounded select-none hover:bg-[var(--row-hover)]"
         style={
           {
             '--row-hover': colors.gray[50],

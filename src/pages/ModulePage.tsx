@@ -1,8 +1,9 @@
 import { FOUNDATION_THEME, TooltipV2Side } from '@juspay/blend-design-system'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useParams } from 'react-router'
-import { useState, type CSSProperties, type DragEvent, type ReactNode } from 'react'
+import { useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
 import ChangeInfo from '../layout/ChangeInfo'
+import { startPointerDrag } from '../layout/pointer-drag'
 import {
   addTab,
   deleteTab,
@@ -50,6 +51,30 @@ function ModulePage({ moduleId }: { moduleId: string }) {
   const from = dragging ? tabs.indexOf(dragging) : -1
   const activeDrop = dropAt !== null && dropAt !== from && dropAt !== from + 1 ? dropAt : null
 
+  const startDrag = (label: string) => (event: PointerEvent<HTMLDivElement>) => {
+    // The ⓘ, the Rename / Delete toolbar and the rename field are not handles.
+    const target = event.target as Element
+    if (target.closest('input, [role=img], [aria-label^="Rename "], [aria-label^="Delete "]'))
+      return
+    let at: number | null = null
+    startPointerDrag(event, {
+      label,
+      onStart: () => setDragging(label),
+      onMove: (x, y) => {
+        const tab = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-tab-index]')
+        if (!tab) return
+        const box = tab.getBoundingClientRect()
+        const index = Number(tab.dataset.tabIndex)
+        at = x < box.left + box.width / 2 ? index : index + 1
+        setDropAt(at)
+      },
+      onDrop: () => {
+        if (at !== null) moveTab(moduleId, label, at)
+      },
+      onEnd: endDrag,
+    })
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col px-6 pt-6">
       <h1 className="sr-only">{nameOf(nav, moduleId)}</h1>
@@ -76,25 +101,8 @@ function ModulePage({ moduleId }: { moduleId: string }) {
                       ? 'after'
                       : null
                 }
-                onDragStart={(event) => {
-                  event.dataTransfer.effectAllowed = 'move'
-                  event.dataTransfer.setData('text/plain', label)
-                  setDragging(label)
-                }}
-                onDragOver={(event) => {
-                  if (!dragging) return
-                  event.preventDefault()
-                  event.dataTransfer.dropEffect = 'move'
-                  const box = event.currentTarget.getBoundingClientRect()
-                  const next = event.clientX < box.left + box.width / 2 ? index : index + 1
-                  if (next !== dropAt) setDropAt(next)
-                }}
-                onDrop={(event) => {
-                  event.preventDefault()
-                  if (dragging && dropAt !== null) moveTab(moduleId, dragging, dropAt)
-                  endDrag()
-                }}
-                onDragEnd={endDrag}
+                index={index}
+                onPointerDown={startDrag(label)}
                 onSelect={() => setPicked(label)}
                 onEdit={(on) => setEditing(on ? label : null)}
                 onRenamed={(to) => {
@@ -124,10 +132,8 @@ function Tab({
   onSelect,
   onEdit,
   onRenamed,
-  onDragStart,
-  onDragOver,
-  onDrop,
-  onDragEnd,
+  index,
+  onPointerDown,
 }: {
   moduleId: string
   label: string
@@ -142,20 +148,16 @@ function Tab({
   onSelect: () => void
   onEdit: (on: boolean) => void
   onRenamed: (to: string) => void
-  onDragStart: (event: DragEvent<HTMLDivElement>) => void
-  onDragOver: (event: DragEvent<HTMLDivElement>) => void
-  onDrop: (event: DragEvent<HTMLDivElement>) => void
-  onDragEnd: () => void
+  index: number
+  /** Starts a drag once the pointer moves (src/layout/pointer-drag.ts). */
+  onPointerDown: (event: PointerEvent<HTMLDivElement>) => void
 }) {
   const canEdit = useCanEdit()
   return (
     <div
-      draggable={canEdit && !isEditing}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      onDragEnd={onDragEnd}
-      className="group relative flex h-[35px] items-start pt-0.5"
+      data-tab-index={index}
+      onPointerDown={canEdit && !isEditing ? onPointerDown : undefined}
+      className="group relative flex h-[35px] items-start pt-0.5 select-none"
       style={{ opacity: isDragging ? 0.4 : 1 }}
     >
       {/* Where the dragged tab will land: a bar in the middle of the 24px gap. */}

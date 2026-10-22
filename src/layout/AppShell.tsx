@@ -8,7 +8,7 @@ import {
   type SidebarV2StateChangeType,
 } from '@juspay/blend-design-system'
 import { LogIn, LogOut } from 'lucide-react'
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import avatarImage from '../assets/avatar.png'
 import searchIcon from '../assets/icons/search-md.svg'
@@ -22,7 +22,11 @@ import { font } from '../primitives'
 import { CHROME_HOVER } from './chrome'
 import { displayName, signOut, useSession } from '../auth/session'
 import ActivityBar from './ActivityBar'
+import { MERCHANTS_V2, RailHelpV2, TENANTS_V2, TopbarActionsV2, TopbarContentV2 } from './chrome-v2'
 import EditableNav from './EditableNav'
+import NavV2 from './NavV2'
+import { buildNavigationDataV2 } from './navigation-v2'
+import { rememberPath, versionOf } from './sidebar-version'
 import { moduleOf, nameOf, useNavState } from './nav-store'
 import { CUSTOM_PATH, ROUTED_MODULES, buildNavigationData } from './navigation'
 import { TopbarStatusIcons } from './topbar'
@@ -205,45 +209,61 @@ function AppShell({ children }: { children?: ReactNode }) {
     [],
   )
 
+  const version = versionOf(pathname)
+  useEffect(() => rememberPath(pathname), [pathname])
   const activePath =
-    NAV_PATHS.has(pathname) || pathname.startsWith(`${CUSTOM_PATH}/`) ? pathname : null
+    version === 2
+      ? pathname
+      : NAV_PATHS.has(pathname) || pathname.startsWith(`${CUSTOM_PATH}/`)
+        ? pathname
+        : null
+  const [workspace, setWorkspace] = useState(MERCHANTS_V2[0].value)
   const nav = useNavState()
   // Blend's own nav list is hidden on desktop in favour of EditableNav, but SidebarV2 still
   // needs the tree: it draws its panel only when `data` is non-empty, and its mobile nav
   // reads it directly.
   const navigationData = useMemo(
     () =>
-      buildNavigationData({
-        sections: nav.sections,
-        nameOf: (id) => nameOf(nav, id),
-        moduleOf: (id) => moduleOf(nav, id),
-        activePath,
-        navigate,
-      }),
-    [nav, activePath, navigate],
+      version === 2
+        ? buildNavigationDataV2(nav.v2, activePath, navigate)
+        : buildNavigationData({
+            sections: nav.sections,
+            nameOf: (id) => nameOf(nav, id),
+            moduleOf: (id) => moduleOf(nav, id),
+            activePath,
+            navigate,
+          }),
+    [version, nav, activePath, navigate],
   )
+  const tenantItems =
+    version === 2
+      ? TENANTS_V2
+      : tenants.map(({ label, value, icon }) => ({
+          label,
+          value,
+          icon: <img src={icon} alt="" className="block size-4 object-contain" />,
+        }))
 
   return (
     <>
       <SidebarV2
+        // Remounted on switching: the two versions are different products, not a restyle.
+        key={version}
         data={navigationData}
         showHierarchyLines
         secondarySidebar={{
-          items: tenants.map(({ label, value, icon }) => ({
-            label,
-            value,
-            icon: <img src={icon} alt="" className="block size-4 object-contain" />,
-          })),
+          items: tenantItems,
           selected: tenant,
           onSelect: setTenant,
+          ...(version === 2 && { footerSlot: <RailHelpV2 /> }),
         }}
-        merchantInfo={{
-          items: merchants,
-          selected: merchant,
-          onSelect: setMerchant,
-        }}
-        topbar={<TopbarContent />}
-        rightActions={<TopbarActions />}
+        merchantInfo={
+          version === 2
+            ? { items: MERCHANTS_V2, selected: workspace, onSelect: setWorkspace }
+            : { items: merchants, selected: merchant, onSelect: setMerchant }
+        }
+        topbar={version === 2 ? <TopbarContentV2 /> : <TopbarContent />}
+        rightActions={version === 2 ? <TopbarActionsV2 /> : <TopbarActions />}
         defaultIsExpanded={RAIL_STARTS_EXPANDED}
         sidebarCollapseKey={SIDEBAR_COLLAPSE_KEY}
         onSidebarStateChange={handleSidebarState}
@@ -251,7 +271,11 @@ function AppShell({ children }: { children?: ReactNode }) {
       >
         {children}
       </SidebarV2>
-      <EditableNav activePath={activePath} navigate={navigate} collapsed={isRailCollapsed} />
+      {version === 2 ? (
+        <NavV2 activePath={activePath} navigate={navigate} collapsed={isRailCollapsed} />
+      ) : (
+        <EditableNav activePath={activePath} navigate={navigate} collapsed={isRailCollapsed} />
+      )}
       <ActivityBar railCollapsed={isRailCollapsed} />
     </>
   )

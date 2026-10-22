@@ -7,23 +7,16 @@ import {
   type DirectoryData,
 } from '@juspay/blend-design-system'
 import {
-  BellDot,
-  BellRing,
   ChartLine,
   ClipboardList,
-  FileClock,
   FileText,
   File,
-  FileUp,
   Gavel,
   History,
   House,
-  Landmark,
   ListChecks,
-  Percent,
   Play,
   Scale,
-  Store,
   Ticket,
   TriangleAlert,
   Upload,
@@ -39,7 +32,6 @@ import { ICON_SIZE } from './chrome'
  */
 export const HOME_PATH = '/home'
 export const CONFIGURATOR_PATH = '/configurator'
-export const ALERTS_PATH = '/alerts'
 
 /**
  * One module in the sidebar. `id` is identity and never changes; `label` is only the
@@ -90,18 +82,20 @@ const recon = (
 
 const TOP_MODULES: NavModule[] = [navModule('Home', lucide(House), { href: HOME_PATH })]
 
+/**
+ * The Reconciliation section as the team settled it (Ritik, 2026-10-22): twelve modules,
+ * "Recon Settlement History" shortened to "Settlement History", and two new Configurator
+ * tabs. Settlement History keeps its old id so the shared copy's edits still attach to it.
+ */
 const RECON_MODULES: NavModule[] = [
   recon('Analytics', ChartLine),
   recon('Reports', FileText),
   recon('Exception', TriangleAlert),
   recon('Upload Files', Upload, { tabs: ['File Upload'] }),
   recon('Run Recon', Play),
-  recon('Settlement Alerts', BellDot),
-  recon('Reconciliation Alerts', BellRing, { href: ALERTS_PATH }),
   recon('Reconciliation Tickets', Ticket, {
     tabs: ['Exception', 'SFTP Config', 'Scheduled Jobs', 'Configuration', 'Settlement Report'],
   }),
-  recon('Reports Tracker', FileClock),
   recon('Configurator', Wrench, {
     href: CONFIGURATOR_PATH,
     tabs: [
@@ -113,17 +107,17 @@ const RECON_MODULES: NavModule[] = [
       'Query Jobs',
       'SFTP Setup',
       'Settlement Report',
+      'Bene Details',
+      'Alert Config',
     ],
   }),
   recon('Dispute Management', Scale, { tabs: ['Merchants'] }),
   recon('Dispute Management-OPS', Gavel, { tabs: ['Merchants'] }),
-  recon('Recon OPS File Upload', FileUp),
-  recon('Recon Fee Config', Percent),
   recon('Settlement Summary', ClipboardList, { tabs: ['Settlement Summary'] }),
-  recon('Settlement Instructions', ListChecks, { tabs: ['Settlement Instructions'] }),
-  recon('Recon Settlement History', History),
-  recon('Vendor Settlement', Store),
-  recon('Recon Bene Details', Landmark),
+  recon('Settlement Instructions', ListChecks, {
+    tabs: ['Settlement Instructions', 'Vendor Settlement'],
+  }),
+  recon('Settlement History', History, { id: 'recon-settlement-history' }),
 ]
 
 /** Pages people add from the sidebar live under here — `/m/<id>`. */
