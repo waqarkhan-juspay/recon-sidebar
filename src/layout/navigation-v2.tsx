@@ -16,12 +16,11 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
-import { DEFAULT_SECTIONS, MODULES } from './navigation'
+import { DEFAULT_SECTIONS } from './navigation'
 
 /**
  * Version 2 of the sidebar: the Juspay dashboard's layout — items that open into sub-items —
- * holding version 1's items. Each version 1 module is a top-level item, and its page tabs are
- * its sub-items; a module without tabs is a plain link. Editable and shared like version 1:
+ * built from version 1's modules, regrouped (SEED below). Editable and shared like version 1:
  * its state lives in the same shared copy (src/layout/nav-store.ts, `v2`), separate from
  * version 1's, so the two can be arranged differently.
  *
@@ -84,28 +83,77 @@ const slug = (label: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
 
+/** An item: its name, its icon, and its sub-items — or `null` for a plain link. */
+type Seed = [label: string, icon: string, subItems: string[] | null]
+
 /**
- * Version 2 as it starts: version 1's default sidebar, with each module's tabs as its
- * sub-items. Items with sub-items start open.
+ * Version 2 as it starts — the sidebar as Waqar laid it out (2026-10-22): version 1's
+ * modules, regrouped. Analytics and Reports open into their reports, Upload Files gains two,
+ * Dispute Management takes OPS in, and Settlement gathers its summary, instructions, vendor
+ * and beneficiary pages. Ids come from the names, so addresses read well:
+ * `/v2/reports/gateway-vs-bank`. Every item with sub-items starts open.
  */
+const SEED: Record<string, Seed[]> = {
+  main: [['Home', 'home', null]],
+  reconciliation: [
+    [
+      'Analytics',
+      'analytics',
+      [
+        'Recon Analytics',
+        'Fee Analytics (to be developed)',
+        'Settlement Analytics (to be developed)',
+      ],
+    ],
+    ['Reports', 'reports', ['Merchant vs Gateway', 'Gateway vs Bank']],
+    ['Exception', 'exception', null],
+    ['Upload Files', 'upload-files', ['File Upload', 'File Summary', 'File Report']],
+    ['Run Recon', 'run-recon', null],
+    [
+      'Reconciliation Tickets',
+      'reconciliation-tickets',
+      ['Exception', 'SFTP Config', 'Scheduled Jobs', 'Configuration', 'Settlement Report'],
+    ],
+    [
+      'Configurator',
+      'configurator',
+      [
+        'Report Config',
+        'SFTP Config',
+        'Schedule Jobs',
+        'Configuration Setup',
+        'Recon Configs',
+        'Query Jobs',
+        'SFTP Setup',
+        'Settlement Report',
+        'Bene Details',
+        'Alert Config',
+      ],
+    ],
+    ['Dispute Management', 'dispute-management', ['Merchants', 'OPS']],
+    ['Settlement', 'settlement-summary', ['Summary', 'Instruction', 'Vendor', 'Bene']],
+  ],
+}
+
 export function defaultV2State(): V2State {
   const state: V2State = { sections: [], groups: {}, pages: {} }
   for (const section of DEFAULT_SECTIONS) {
-    for (const id of section.itemIds) {
-      const mod = MODULES[id]
-      const tabs = mod.tabs ?? []
-      if (tabs.length === 0) {
-        state.groups[id] = { label: mod.label, icon: id, description: '' }
+    const groupIds: string[] = []
+    for (const [label, icon, subItems] of SEED[section.id] ?? []) {
+      const id = slug(label)
+      groupIds.push(id)
+      if (!subItems) {
+        state.groups[id] = { label, icon, description: '' }
         continue
       }
-      const pageIds = tabs.map((tab) => {
-        const pageId = `${id}/${slug(tab)}`
-        state.pages[pageId] = { label: tab, description: '' }
+      const pageIds = subItems.map((page) => {
+        const pageId = `${id}/${slug(page)}`
+        state.pages[pageId] = { label: page, description: '' }
         return pageId
       })
-      state.groups[id] = { label: mod.label, icon: id, pageIds, defaultOpen: true }
+      state.groups[id] = { label, icon, pageIds, defaultOpen: true }
     }
-    state.sections.push({ id: section.id, groupIds: [...section.itemIds] })
+    state.sections.push({ id: section.id, groupIds })
   }
   return state
 }
