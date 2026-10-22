@@ -21,7 +21,7 @@ import MaskIcon from '../components/MaskIcon'
 import { font } from '../primitives'
 import { CHROME_HOVER } from './chrome'
 import { displayName, showSignIn, signOut, useSession } from '../auth/session'
-import ActivityBar from './ActivityBar'
+import VersionBar from './VersionBar'
 import { MERCHANTS_V2, RailHelpV2, TENANTS_V2, TopbarActionsV2, TopbarContentV2 } from './chrome-v2'
 import EditableNav from './EditableNav'
 import NavV2 from './NavV2'
@@ -276,7 +276,7 @@ function AppShell({ children }: { children?: ReactNode }) {
       ) : (
         <EditableNav activePath={activePath} navigate={navigate} collapsed={isRailCollapsed} />
       )}
-      <ActivityBar railCollapsed={isRailCollapsed} />
+      <VersionBar railCollapsed={isRailCollapsed} />
     </>
   )
 }
